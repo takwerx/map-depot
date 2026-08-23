@@ -24,6 +24,7 @@ import com.atakmap.coremap.log.Log;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,9 +59,26 @@ public class MapDepot implements IPlugin {
     private DepotClient client;
     private RegionInstaller installer;
 
-    private final List<Depot.Region> regions = new ArrayList<>();
+    /** Everything the catalog offers. */
+    private final List<Depot.Region> allRegions = new ArrayList<>();
+
+    /** Just the country currently selected — what the list actually shows. */
+    private final List<Depot.Region> shown = new ArrayList<>();
+
+    /** Country code per spinner position, in the order the spinner shows them. */
+    private final List<String> countryCodes = new ArrayList<>();
+
     private RegionAdapter adapter;
     private TextView status;
+    private View homeView, dtedView;
+    private Button countryButton;
+
+    /** Index into {@link #countryCodes} of the country being shown. */
+    private int countryIndex;
+
+    /** Display names, parallel to {@link #countryCodes}. */
+    private final List<String> countryLabels = new ArrayList<>();
+    private boolean catalogLoaded;
 
     /** id of the region currently downloading, or null. One at a time on purpose. */
     private String activeRegionId;
@@ -137,11 +155,120 @@ public class MapDepot implements IPlugin {
     }
 
     private void bind(View root) {
+        homeView = root.findViewById(R.id.home_view);
+        dtedView = root.findViewById(R.id.dted_view);
         status = root.findViewById(R.id.depot_status);
+        countryButton = root.findViewById(R.id.country_button);
+
         adapter = new RegionAdapter(pluginContext);
         final ListView list = root.findViewById(R.id.region_list);
         list.setAdapter(adapter);
-        loadCatalog();
+
+        root.findViewById(R.id.btn_dted).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showDted();
+                    }
+                });
+
+        // Imagery is the other half of the depot and has nothing published yet.
+        // Say so on the button rather than hiding it, so the shape of the plugin
+        // is visible before the content exists.
+        final Button maps = root.findViewById(R.id.btn_maps);
+        maps.setEnabled(false);
+        ((TextView) root.findViewById(R.id.home_note))
+                .setText(R.string.maps_not_yet);
+
+        root.findViewById(R.id.btn_back).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showHome();
+                    }
+                });
+
+        countryButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                chooseCountry();
+            }
+        });
+
+        showHome();
+    }
+
+    private void showHome() {
+        homeView.setVisibility(View.VISIBLE);
+        dtedView.setVisibility(View.GONE);
+    }
+
+    /** The catalog is only fetched once the operator asks for elevation. */
+    private void showDted() {
+        homeView.setVisibility(View.GONE);
+        dtedView.setVisibility(View.VISIBLE);
+        if (!catalogLoaded)
+            loadCatalog();
+    }
+
+    /**
+     * Builds the country list from the catalog rather than a fixed list, so a
+     * country added to the depot appears without a plugin release.
+     */
+    private void populateCountries() {
+        final Map<String, String> names = new LinkedHashMap<>();
+        for (Depot.Region r : allRegions)
+            if (!r.country.isEmpty())
+                names.put(r.country, r.countryName());
+
+        countryCodes.clear();
+        countryLabels.clear();
+        // United States first: it is the complete one, and the fleet is there.
+        if (names.containsKey("US")) {
+            countryCodes.add("US");
+            countryLabels.add(names.get("US"));
+        }
+        for (Map.Entry<String, String> e : names.entrySet()) {
+            if ("US".equals(e.getKey()))
+                continue;
+            countryCodes.add(e.getKey());
+            countryLabels.add(e.getValue());
+        }
+        countryIndex = 0;
+    }
+
+    /** The chooser is a dialog on ATAK's context, for the reason in the layout. */
+    private void chooseCountry() {
+        if (countryLabels.isEmpty())
+            return;
+        final String[] items = countryLabels.toArray(new String[0]);
+        new AlertDialog.Builder(hostContext())
+                .setTitle(pluginContext.getString(R.string.choose_country))
+                .setSingleChoiceItems(items, countryIndex,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                countryIndex = which;
+                                d.dismiss();
+                                applyCountryFilter();
+                            }
+                        })
+                .setNegativeButton(pluginContext.getString(R.string.cancel), null)
+                .show();
+    }
+
+    private void applyCountryFilter() {
+        final String code = (countryIndex >= 0
+                && countryIndex < countryCodes.size())
+                        ? countryCodes.get(countryIndex) : null;
+        if (countryIndex >= 0 && countryIndex < countryLabels.size())
+            countryButton.setText(countryLabels.get(countryIndex) + "  ▾");
+
+        shown.clear();
+        for (Depot.Region r : allRegions)
+            if (code == null || code.equals(r.country))
+                shown.add(r);
+        adapter.notifyDataSetChanged();
     }
 
     private void loadCatalog() {
@@ -149,19 +276,16 @@ public class MapDepot implements IPlugin {
         client.fetchCatalog(new DepotClient.CatalogCallback() {
             @Override
             public void onCatalog(List<Depot.Region> fetched, boolean cached) {
-                regions.clear();
-                regions.addAll(fetched);
-                adapter.notifyDataSetChanged();
+                catalogLoaded = true;
+                allRegions.clear();
+                allRegions.addAll(fetched);
+                populateCountries();
+                applyCountryFilter();
 
                 if (cached) {
                     status.setText(R.string.catalog_offline);
                 } else {
-                    int complete = 0;
-                    for (Depot.Region r : fetched)
-                        if (r.complete)
-                            complete++;
-                    status.setText(String.format("%d regions, %d complete",
-                            fetched.size(), complete));
+                    status.setText("");
                 }
             }
 
@@ -311,7 +435,7 @@ public class MapDepot implements IPlugin {
     private final class RegionAdapter extends ArrayAdapter<Depot.Region> {
 
         RegionAdapter(Context ctx) {
-            super(ctx, 0, regions);
+            super(ctx, 0, shown);
         }
 
         @Override
@@ -330,10 +454,9 @@ public class MapDepot implements IPlugin {
             final ProgressBar bar = row.findViewById(R.id.region_progress);
             final Button action = row.findViewById(R.id.region_action);
 
-            name.setText(region.country.isEmpty() ? region.name
-                    : region.name + "  (" + region.country + ")");
-            detail.setText(region.describeCoverage() + " · "
-                    + region.describeSize());
+            // The country is the dropdown, so the row does not repeat it.
+            name.setText(region.name);
+            detail.setText(region.describe());
 
             final Integer pct = progressById.get(region.id);
             if (pct != null) {

@@ -5,11 +5,18 @@
     <!-- Shown by ATAK's plugin manager -->
     <string name="app_desc">Download ATAK map data — imagery map sources and DTED2 elevation by region — from inside ATAK. Every file is checksum-verified before it is installed.</string>
 
-    <!-- Depot pane -->
+    <!-- Landing -->
     <string name="elevation_heading">Elevation (DTED2)</string>
+    <string name="maps_heading">Maps &amp; Imagery</string>
+    <string name="maps_not_yet">Maps and imagery are not published yet.</string>
+
+    <!-- Depot pane -->
+    <string name="back">‹ Back</string>
     <string name="loading_catalog">Loading catalog…</string>
     <string name="get">Get</string>
     <string name="cancel">Cancel</string>
     <string name="installed">Installed</string>
+    <string name="partial">Partial</string>
+    <string name="choose_country">Country</string>
     <string name="catalog_offline">Showing the last catalog — no connection to the depot.</string>
 </resources>

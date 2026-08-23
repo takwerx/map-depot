@@ -58,17 +58,24 @@ public final class Depot {
                 throw new IllegalArgumentException("region missing id or manifest");
         }
 
-        /** e.g. "679 MB download, 1.7 GB on the device" */
-        public String describeSize() {
-            return String.format("%s download, %s installed",
-                    Depot.bytes(downloadBytes), Depot.bytes(installedBytes));
+        /**
+         * What the operator is deciding on is whether it fits on the device, so
+         * the row shows the installed size and nothing else. Cell counts and
+         * compressed transfer sizes are engineering detail; a partial region says
+         * "Partial" rather than quoting a fraction nobody can act on.
+         */
+        public String describe() {
+            final String size = Depot.bytes(installedBytes);
+            return complete ? size : size + " · " + "Partial";
         }
 
-        /** Partial regions say so rather than looking finished at a smaller size. */
-        public String describeCoverage() {
-            if (complete)
-                return cellCount + " cells";
-            return cellCount + " of " + needCount + " cells";
+        /** "US" / "CA" rendered for a person. */
+        public String countryName() {
+            if ("US".equals(country))
+                return "United States";
+            if ("CA".equals(country))
+                return "Canada";
+            return country;
         }
     }
 
