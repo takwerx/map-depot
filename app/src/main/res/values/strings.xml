@@ -2,6 +2,14 @@
 <resources>
     <!-- App -->
     <string name="app_name">Map Depot</string>
-    <!-- description -->
-    <string name="app_desc">Map Depot</string>
+    <!-- Shown by ATAK's plugin manager -->
+    <string name="app_desc">Download ATAK map data — imagery map sources and DTED2 elevation by region — from inside ATAK. Every file is checksum-verified before it is installed.</string>
+
+    <!-- Depot pane -->
+    <string name="elevation_heading">Elevation (DTED2)</string>
+    <string name="loading_catalog">Loading catalog…</string>
+    <string name="get">Get</string>
+    <string name="cancel">Cancel</string>
+    <string name="installed">Installed</string>
+    <string name="catalog_offline">Showing the last catalog — no connection to the depot.</string>
 </resources>

@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_desc">This plugin demonstrate bare bones plugin UI, and may be used to start a new plugin project\n\nDISTRIBUTION STATEMENT A. Approved for public release: distribution unlimited.</string>
+    <string name="app_desc">Download ATAK map data — imagery map sources and DTED2 elevation by region — from inside ATAK. Every file is checksum-verified before it is installed.\n\nDISTRIBUTION STATEMENT A. Approved for public release: distribution unlimited.</string>
 
-    <!-- will be wired in for 4.4 if the above is deemed acceptable -->
     <string name="app_distro_statement">DISTRIBUTION STATEMENT A. Approved for public release: distribution unlimited.</string>
-
-
 </resources>

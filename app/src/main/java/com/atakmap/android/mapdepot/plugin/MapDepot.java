@@ -1,10 +1,31 @@
-
 package com.atakmap.android.mapdepot.plugin;
 
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.ListView;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
+import com.atakmap.android.mapdepot.Depot;
+import com.atakmap.android.mapdepot.DepotClient;
+import com.atakmap.android.mapdepot.RegionInstaller;
+import com.atakmap.coremap.log.Log;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import gov.tak.api.plugin.IPlugin;
 import gov.tak.api.plugin.IServiceController;
@@ -15,16 +36,41 @@ import gov.tak.api.ui.ToolbarItem;
 import gov.tak.api.ui.ToolbarItemAdapter;
 import gov.tak.platform.marshal.MarshalManager;
 
+/**
+ * Map Depot — map data arrives on the device from inside ATAK.
+ *
+ * Pick a region, tap Get, and its elevation cells land in ATAK's own DTED folder,
+ * each one checksum-verified on the way in. No browser, no Downloads folder, no
+ * Import Manager, and no need to know that a cell is a file called n33.dt2 that
+ * belongs in a directory called w116.
+ */
 public class MapDepot implements IPlugin {
 
-    IServiceController serviceController;
-    Context pluginContext;
-    IHostUIService uiService;
-    ToolbarItem toolbarItem;
-    Pane templatePane;
+    private static final String TAG = "MapDepot";
+
+    private final IServiceController serviceController;
+    private Context pluginContext;
+    private IHostUIService uiService;
+    private ToolbarItem toolbarItem;
+    private Pane pane;
+
+    private DepotClient client;
+    private RegionInstaller installer;
+
+    private final List<Depot.Region> regions = new ArrayList<>();
+    private RegionAdapter adapter;
+    private TextView status;
+
+    /** id of the region currently downloading, or null. One at a time on purpose. */
+    private String activeRegionId;
+    private final Map<String, Integer> progressById = new HashMap<>();
+
+    /** Regions known to be fully installed, so a row can say so without rescanning. */
+    private final Set<String> completeById = new HashSet<>();
 
     public MapDepot(IServiceController serviceController) {
         this.serviceController = serviceController;
+
         final PluginContextProvider ctxProvider = serviceController
                 .getService(PluginContextProvider.class);
         if (ctxProvider != null) {
@@ -32,18 +78,13 @@ public class MapDepot implements IPlugin {
             pluginContext.setTheme(R.style.ATAKPluginTheme);
         }
 
-        // obtain the UI service
         uiService = serviceController.getService(IHostUIService.class);
 
-        // initialize the toolbar button for the plugin
-
-        // create the button and set the identifier to be well known
-        // if you fail to do this, the toolbar configuration will never
-        // be able to find it again after the user moves the icon.
         toolbarItem = new ToolbarItem.Builder(
                 pluginContext.getString(R.string.app_name),
                 MarshalManager.marshal(
-                        pluginContext.getResources().getDrawable(R.drawable.ic_launcher),
+                        pluginContext.getResources()
+                                .getDrawable(R.drawable.ic_launcher),
                         android.graphics.drawable.Drawable.class,
                         gov.tak.api.commons.graphics.Bitmap.class))
                 .setListener(new ToolbarItemAdapter() {
@@ -51,50 +92,254 @@ public class MapDepot implements IPlugin {
                     public void onClick(ToolbarItem item) {
                         showPane();
                     }
-                }).setIdentifier(pluginContext.getPackageName())
+                })
+                .setIdentifier(pluginContext.getPackageName())
                 .build();
     }
 
     @Override
     public void onStart() {
-        // the plugin is starting, add the button to the toolbar
         if (uiService == null)
             return;
-
+        client = new DepotClient(pluginContext.getCacheDir());
+        installer = new RegionInstaller();
         uiService.addToolbarItem(toolbarItem);
     }
 
     @Override
     public void onStop() {
-        // the plugin is stopping, remove the button from the toolbar
-        if (uiService == null)
-            return;
-
-        uiService.removeToolbarItem(toolbarItem);
+        if (installer != null) {
+            installer.shutdown();
+            installer = null;
+        }
+        if (client != null) {
+            client.shutdown();
+            client = null;
+        }
+        if (uiService != null)
+            uiService.removeToolbarItem(toolbarItem);
     }
 
     private void showPane() {
-        // instantiate the plugin view if necessary
-        if(templatePane == null) {
-            // Remember to use the PluginLayoutInflator if you are actually inflating a custom view
-            // In this case, using it is not necessary - but I am putting it here to remind
-            // developers to look at this Inflator
-
-            templatePane = new PaneBuilder(PluginLayoutInflater.inflate(pluginContext,
-                    R.layout.main_layout, null))
-                    // relative location is set to default; pane will switch location dependent on
-                    // current orientation of device screen
+        if (pane == null) {
+            final View root = PluginLayoutInflater.inflate(pluginContext,
+                    R.layout.main_layout, null);
+            bind(root);
+            pane = new PaneBuilder(root)
                     .setMetaValue(Pane.RELATIVE_LOCATION, Pane.Location.Default)
-                    // pane will take up 50% of screen width in landscape mode
                     .setMetaValue(Pane.PREFERRED_WIDTH_RATIO, 0.5D)
-                    // pane will take up 50% of screen height in portrait mode
                     .setMetaValue(Pane.PREFERRED_HEIGHT_RATIO, 0.5D)
                     .build();
         }
+        if (!uiService.isPaneVisible(pane))
+            uiService.showPane(pane, null);
+    }
 
-        // if the plugin pane is not visible, show it!
-        if(!uiService.isPaneVisible(templatePane)) {
-            uiService.showPane(templatePane, null);
+    private void bind(View root) {
+        status = root.findViewById(R.id.depot_status);
+        adapter = new RegionAdapter(pluginContext);
+        final ListView list = root.findViewById(R.id.region_list);
+        list.setAdapter(adapter);
+        loadCatalog();
+    }
+
+    private void loadCatalog() {
+        status.setText(R.string.loading_catalog);
+        client.fetchCatalog(new DepotClient.CatalogCallback() {
+            @Override
+            public void onCatalog(List<Depot.Region> fetched, boolean cached) {
+                regions.clear();
+                regions.addAll(fetched);
+                adapter.notifyDataSetChanged();
+
+                if (cached) {
+                    status.setText(R.string.catalog_offline);
+                } else {
+                    int complete = 0;
+                    for (Depot.Region r : fetched)
+                        if (r.complete)
+                            complete++;
+                    status.setText(String.format("%d regions, %d complete",
+                            fetched.size(), complete));
+                }
+            }
+
+            @Override
+            public void onError(String message) {
+                status.setText("Depot unreachable: " + message);
+            }
+        });
+    }
+
+    /**
+     * Fetching the manifest first means the confirmation can quote what this
+     * device actually still needs, not the region's full size. Someone who
+     * already holds most of a state should be told the real number.
+     */
+    private void confirmAndInstall(final Depot.Region region) {
+        if (activeRegionId != null) {
+            toast("Already downloading " + activeRegionId
+                    + " — let it finish first.");
+            return;
+        }
+
+        status.setText("Reading " + region.name + "…");
+        client.fetchManifest(region, new DepotClient.ManifestCallback() {
+            @Override
+            public void onManifest(Depot.Manifest manifest) {
+                final int held = RegionInstaller.installedCount(manifest);
+                final int todo = manifest.cells.size() - held;
+
+                if (todo == 0) {
+                    completeById.add(region.id);
+                    adapter.notifyDataSetChanged();
+                    status.setText(region.name + " is already installed.");
+                    return;
+                }
+
+                long bytes = 0;
+                for (Depot.Cell c : manifest.cells)
+                    bytes += c.gzBytes;
+                final long approx = held > 0
+                        ? (long) (bytes * (todo / (double) manifest.cells.size()))
+                        : bytes;
+
+                final StringBuilder msg = new StringBuilder();
+                msg.append(todo).append(" cells, about ")
+                        .append(Depot.bytes(approx)).append(" to download.");
+                if (held > 0)
+                    msg.append("\n").append(held)
+                            .append(" already on this device will be skipped.");
+                if (!region.complete)
+                    msg.append("\n\nThis region is partial: the depot holds ")
+                            .append(region.cellCount).append(" of ")
+                            .append(region.needCount).append(" cells.");
+
+                new AlertDialog.Builder(pluginContext)
+                        .setTitle(region.name)
+                        .setMessage(msg.toString())
+                        .setPositiveButton(R.string.get,
+                                new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface d, int w) {
+                                        start(region, manifest);
+                                    }
+                                })
+                        .setNegativeButton(R.string.cancel, null)
+                        .show();
+            }
+
+            @Override
+            public void onError(String message) {
+                status.setText("Could not read " + region.name + ": " + message);
+            }
+        });
+    }
+
+    private void start(final Depot.Region region, Depot.Manifest manifest) {
+        activeRegionId = region.id;
+        progressById.put(region.id, 0);
+        adapter.notifyDataSetChanged();
+
+        installer.install(manifest, new RegionInstaller.Callback() {
+            @Override
+            public void onProgress(int done, int total, long bytesDone,
+                    long bytesTotal, String cell) {
+                final int pct = total > 0 ? (int) (done * 100L / total) : 0;
+                progressById.put(region.id, pct);
+                status.setText(String.format("%s — %d of %d cells (%s of %s)",
+                        region.name, done, total, Depot.bytes(bytesDone),
+                        Depot.bytes(bytesTotal)));
+                adapter.notifyDataSetChanged();
+            }
+
+            @Override
+            public void onSkipped(String key) {
+                // Already held; nothing to say about it beyond the running count.
+            }
+
+            @Override
+            public void onRetry(String key, int attempt, long haveBytes) {
+                status.setText(String.format(
+                        "%s — connection dropped, resuming %s (attempt %d)",
+                        region.name, key, attempt));
+            }
+
+            @Override
+            public void onComplete(int installed, int skipped) {
+                activeRegionId = null;
+                progressById.remove(region.id);
+                completeById.add(region.id);
+                adapter.notifyDataSetChanged();
+                status.setText(String.format(
+                        "%s installed — %d cells added, %d already held.",
+                        region.name, installed, skipped));
+            }
+
+            @Override
+            public void onError(String message) {
+                activeRegionId = null;
+                progressById.remove(region.id);
+                adapter.notifyDataSetChanged();
+                status.setText(region.name + " failed: " + message);
+                Log.w(TAG, region.id + " install failed: " + message);
+            }
+        });
+    }
+
+    private void toast(String s) {
+        Toast.makeText(pluginContext, s, Toast.LENGTH_SHORT).show();
+    }
+
+    // ------------------------------------------------------------------ list
+
+    private final class RegionAdapter extends ArrayAdapter<Depot.Region> {
+
+        RegionAdapter(Context ctx) {
+            super(ctx, 0, regions);
+        }
+
+        @Override
+        public View getView(int position, View convert, ViewGroup parent) {
+            View row = convert;
+            if (row == null)
+                row = LayoutInflater.from(pluginContext)
+                        .inflate(R.layout.region_row, parent, false);
+
+            final Depot.Region region = getItem(position);
+            if (region == null)
+                return row;
+
+            final TextView name = row.findViewById(R.id.region_name);
+            final TextView detail = row.findViewById(R.id.region_detail);
+            final ProgressBar bar = row.findViewById(R.id.region_progress);
+            final Button action = row.findViewById(R.id.region_action);
+
+            name.setText(region.country.isEmpty() ? region.name
+                    : region.name + "  (" + region.country + ")");
+            detail.setText(region.describeCoverage() + " · "
+                    + region.describeSize());
+
+            final Integer pct = progressById.get(region.id);
+            if (pct != null) {
+                bar.setVisibility(View.VISIBLE);
+                bar.setProgress(pct);
+                action.setEnabled(false);
+                action.setText(pct + "%");
+            } else {
+                bar.setVisibility(View.GONE);
+                final boolean done = completeById.contains(region.id);
+                action.setEnabled(!done && activeRegionId == null);
+                action.setText(done ? R.string.installed : R.string.get);
+            }
+
+            action.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    confirmAndInstall(region);
+                }
+            });
+            return row;
         }
     }
 }
