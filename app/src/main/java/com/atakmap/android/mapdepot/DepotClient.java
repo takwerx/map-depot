@@ -67,6 +67,18 @@ public final class DepotClient {
         void onError(String message);
     }
 
+    public interface BaseMapCallback {
+        void onBaseMaps(List<Depot.BaseMap> maps);
+
+        void onError(String message);
+    }
+
+    public interface ForestCallback {
+        void onForests(List<Depot.Forest> forests);
+
+        void onError(String message);
+    }
+
     public interface ManifestCallback {
         void onManifest(Depot.Manifest manifest);
 
@@ -109,6 +121,93 @@ public final class DepotClient {
                         postError(cb, describe(e));
                     }
                 }
+            }
+        });
+    }
+
+    /**
+     * Base maps live in the same catalog document the region list came from, but
+     * this fetches it rather than assuming a previous call left a cache behind.
+     * Reading only the cache meant an operator who opened Base Maps first -- never
+     * touching Elevation -- got an empty list, because nothing had populated it.
+     */
+    public void fetchBaseMaps(final BaseMapCallback cb) {
+        worker.execute(new Runnable() {
+            @Override
+            public void run() {
+                final File cache = new File(cacheDir, CATALOG);
+                try {
+                    final String body = get(baseUrl() + "/" + CATALOG);
+                    final List<Depot.BaseMap> maps = Depot.parseBaseMaps(body);
+                    write(cache, body);
+                    postMaps(cb, maps);
+                } catch (final Exception e) {
+                    Log.w(TAG, "base map fetch failed: " + describe(e));
+                    try {
+                        postMaps(cb, Depot.parseBaseMaps(read(cache)));
+                    } catch (Exception noCache) {
+                        final String msg = describe(e);
+                        main.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                cb.onError(msg);
+                            }
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    private void postMaps(final BaseMapCallback cb,
+            final List<Depot.BaseMap> maps) {
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                cb.onBaseMaps(maps);
+            }
+        });
+    }
+
+    /**
+     * Forest packages are listed in the same catalog document as everything else,
+     * fetched here rather than read from cache for the same reason base maps are:
+     * whichever section the operator opens first must work on its own.
+     */
+    public void fetchForests(final ForestCallback cb) {
+        worker.execute(new Runnable() {
+            @Override
+            public void run() {
+                final File cache = new File(cacheDir, CATALOG);
+                try {
+                    final String body = get(baseUrl() + "/" + CATALOG);
+                    final List<Depot.Forest> forests = Depot.parseForests(body);
+                    write(cache, body);
+                    postForests(cb, forests);
+                } catch (final Exception e) {
+                    Log.w(TAG, "forest fetch failed: " + describe(e));
+                    try {
+                        postForests(cb, Depot.parseForests(read(cache)));
+                    } catch (Exception noCache) {
+                        final String msg = describe(e);
+                        main.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                cb.onError(msg);
+                            }
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    private void postForests(final ForestCallback cb,
+            final List<Depot.Forest> forests) {
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                cb.onForests(forests);
             }
         });
     }

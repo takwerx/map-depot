@@ -6,8 +6,11 @@ import android.content.DialogInterface;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -16,10 +19,14 @@ import android.widget.Toast;
 import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.maps.MapView;
+import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
+import com.atakmap.android.mapdepot.ForestInstaller;
 import com.atakmap.android.mapdepot.RegionInstaller;
 import com.atakmap.coremap.log.Log;
+
+import java.io.File;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -58,6 +65,8 @@ public class MapDepot implements IPlugin {
 
     private DepotClient client;
     private RegionInstaller installer;
+    private BaseMapInstaller baseMaps;
+    private ForestInstaller forests;
 
     /** Everything the catalog offers. */
     private final List<Depot.Region> allRegions = new ArrayList<>();
@@ -70,7 +79,7 @@ public class MapDepot implements IPlugin {
 
     private RegionAdapter adapter;
     private TextView status;
-    private View homeView, dtedView;
+    private View homeView, dtedView, baseMapView;
     private Button countryButton;
 
     /** Index into {@link #countryCodes} of the country being shown. */
@@ -86,6 +95,27 @@ public class MapDepot implements IPlugin {
 
     /** Regions known to be fully installed, so a row can say so without rescanning. */
     private final Set<String> completeById = new HashSet<>();
+
+    private final List<Depot.Forest> allForests = new ArrayList<>();
+    private final List<Depot.Forest> shownForests = new ArrayList<>();
+    private final Set<String> installedForests = new HashSet<>();
+    private ForestAdapter forestAdapter;
+    private TextView forestStatus;
+    private EditText forestSearch;
+    private View forestView;
+
+    /** id of the package currently downloading, or null. One at a time. */
+    private String activeForestId;
+    private long forestDone, forestTotal;
+
+    private final List<Depot.BaseMap> allMaps = new ArrayList<>();
+    private final List<Depot.BaseMap> shownMaps = new ArrayList<>();
+    private final List<String> categories = new ArrayList<>();
+    private int categoryIndex;
+    private BaseMapAdapter mapAdapter;
+    private TextView mapStatus;
+    private Button categoryButton;
+    private final Set<String> installedMaps = new HashSet<>();
 
     public MapDepot(IServiceController serviceController) {
         this.serviceController = serviceController;
@@ -120,8 +150,10 @@ public class MapDepot implements IPlugin {
     public void onStart() {
         if (uiService == null)
             return;
-        client = new DepotClient(pluginContext.getCacheDir());
+        client = new DepotClient(cacheDir());
         installer = new RegionInstaller();
+        baseMaps = new BaseMapInstaller();
+        forests = new ForestInstaller();
         uiService.addToolbarItem(toolbarItem);
     }
 
@@ -130,6 +162,14 @@ public class MapDepot implements IPlugin {
         if (installer != null) {
             installer.shutdown();
             installer = null;
+        }
+        if (baseMaps != null) {
+            baseMaps.shutdown();
+            baseMaps = null;
+        }
+        if (forests != null) {
+            forests.shutdown();
+            forests = null;
         }
         if (client != null) {
             client.shutdown();
@@ -157,6 +197,9 @@ public class MapDepot implements IPlugin {
     private void bind(View root) {
         homeView = root.findViewById(R.id.home_view);
         dtedView = root.findViewById(R.id.dted_view);
+        baseMapView = root.findViewById(R.id.basemap_view);
+        mapStatus = root.findViewById(R.id.basemap_status);
+        categoryButton = root.findViewById(R.id.category_button);
         status = root.findViewById(R.id.depot_status);
         countryButton = root.findViewById(R.id.country_button);
 
@@ -172,13 +215,68 @@ public class MapDepot implements IPlugin {
                     }
                 });
 
-        // Imagery is the other half of the depot and has nothing published yet.
-        // Say so on the button rather than hiding it, so the shape of the plugin
-        // is visible before the content exists.
-        final Button maps = root.findViewById(R.id.btn_maps);
-        maps.setEnabled(false);
-        ((TextView) root.findViewById(R.id.home_note))
-                .setText(R.string.maps_not_yet);
+        mapAdapter = new BaseMapAdapter(pluginContext);
+        ((ListView) root.findViewById(R.id.basemap_list)).setAdapter(mapAdapter);
+
+        root.findViewById(R.id.btn_maps).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showBaseMaps();
+                    }
+                });
+
+        forestView = root.findViewById(R.id.forest_view);
+        forestStatus = root.findViewById(R.id.forest_status);
+        forestSearch = root.findViewById(R.id.forest_search);
+        forestAdapter = new ForestAdapter(pluginContext);
+        ((ListView) root.findViewById(R.id.forest_list)).setAdapter(forestAdapter);
+
+        root.findViewById(R.id.btn_forests).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showForests();
+                    }
+                });
+
+        root.findViewById(R.id.btn_back_forests).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showHome();
+                    }
+                });
+
+        forestSearch.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence c, int a, int b, int d) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable e) {
+                applyForestFilter();
+            }
+        });
+
+        root.findViewById(R.id.btn_back_maps).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showHome();
+                    }
+                });
+
+        categoryButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                chooseCategory();
+            }
+        });
 
         root.findViewById(R.id.btn_back).setOnClickListener(
                 new View.OnClickListener() {
@@ -201,11 +299,37 @@ public class MapDepot implements IPlugin {
     private void showHome() {
         homeView.setVisibility(View.VISIBLE);
         dtedView.setVisibility(View.GONE);
+        baseMapView.setVisibility(View.GONE);
+        forestView.setVisibility(View.GONE);
+    }
+
+    private void showForests() {
+        homeView.setVisibility(View.GONE);
+        dtedView.setVisibility(View.GONE);
+        baseMapView.setVisibility(View.GONE);
+        forestView.setVisibility(View.VISIBLE);
+        if (!catalogLoaded)
+            loadCatalog();
+        else
+            applyForestFilter();
+    }
+
+    private void showBaseMaps() {
+        homeView.setVisibility(View.GONE);
+        dtedView.setVisibility(View.GONE);
+        forestView.setVisibility(View.GONE);
+        baseMapView.setVisibility(View.VISIBLE);
+        if (!catalogLoaded)
+            loadCatalog();
+        else
+            applyCategoryFilter();
     }
 
     /** The catalog is only fetched once the operator asks for elevation. */
     private void showDted() {
         homeView.setVisibility(View.GONE);
+        baseMapView.setVisibility(View.GONE);
+        forestView.setVisibility(View.GONE);
         dtedView.setVisibility(View.VISIBLE);
         if (!catalogLoaded)
             loadCatalog();
@@ -276,11 +400,14 @@ public class MapDepot implements IPlugin {
         client.fetchCatalog(new DepotClient.CatalogCallback() {
             @Override
             public void onCatalog(List<Depot.Region> fetched, boolean cached) {
+                Log.i(TAG, "onCatalog regions=" + fetched.size() + " cached=" + cached);
                 catalogLoaded = true;
                 allRegions.clear();
                 allRegions.addAll(fetched);
                 populateCountries();
                 applyCountryFilter();
+                loadBaseMaps();
+                loadForests();
 
                 if (cached) {
                     status.setText(R.string.catalog_offline);
@@ -291,6 +418,7 @@ public class MapDepot implements IPlugin {
 
             @Override
             public void onError(String message) {
+                Log.w(TAG, "catalog error: " + message);
                 status.setText("Depot unreachable: " + message);
             }
         });
@@ -421,13 +549,336 @@ public class MapDepot implements IPlugin {
      * context instead. Getting this wrong does not degrade: it throws
      * BadTokenException on the main thread and takes ATAK down with it.
      */
+    /**
+     * A cache directory ATAK's own process can actually write. The plugin
+     * context's getCacheDir() points inside the plugin package's data dir, which
+     * ATAK runs under a different uid and cannot create -- it fails with ENOENT,
+     * so every document written there vanished and Base Maps came up empty.
+     */
+    private File cacheDir() {
+        final MapView mv = MapView.getMapView();
+        final Context host = mv != null ? mv.getContext() : pluginContext;
+        return new File(host.getCacheDir(), "mapdepot");
+    }
+
     private Context hostContext() {
         final MapView mv = MapView.getMapView();
         return mv != null ? mv.getContext() : pluginContext;
     }
 
+    /**
+     * Base maps come from the same catalog document, so they cost no extra
+     * request -- the client re-reads its cached copy rather than fetching again.
+     */
+    private void loadBaseMaps() {
+        client.fetchBaseMaps(new DepotClient.BaseMapCallback() {
+            @Override
+            public void onBaseMaps(List<Depot.BaseMap> maps) {
+                Log.i(TAG, "onBaseMaps count=" + maps.size());
+                allMaps.clear();
+                allMaps.addAll(maps);
+
+                categories.clear();
+                categories.add(pluginContext.getString(R.string.all_categories));
+                for (Depot.BaseMap m : maps)
+                    if (!categories.contains(m.category))
+                        categories.add(m.category);
+                categoryIndex = 0;
+                refreshInstalledMaps();
+                applyCategoryFilter();
+            }
+
+            @Override
+            public void onError(String message) {
+                Log.w(TAG, "base map error: " + message);
+                mapStatus.setText("Could not read base maps: " + message);
+            }
+        });
+    }
+
+    /** Ask the filesystem once per listing rather than once per row. */
+    private void refreshInstalledMaps() {
+        installedMaps.clear();
+        for (Depot.BaseMap m : allMaps)
+            if (BaseMapInstaller.isInstalled(m))
+                installedMaps.add(m.id);
+    }
+
+    private void chooseCategory() {
+        if (categories.isEmpty())
+            return;
+        final String[] items = categories.toArray(new String[0]);
+        new AlertDialog.Builder(hostContext())
+                .setTitle(pluginContext.getString(R.string.choose_category))
+                .setSingleChoiceItems(items, categoryIndex,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                categoryIndex = which;
+                                d.dismiss();
+                                applyCategoryFilter();
+                            }
+                        })
+                .setNegativeButton(pluginContext.getString(R.string.cancel), null)
+                .show();
+    }
+
+    private void applyCategoryFilter() {
+        final String want = (categoryIndex > 0
+                && categoryIndex < categories.size())
+                        ? categories.get(categoryIndex) : null;
+        if (!categories.isEmpty())
+            categoryButton.setText(categories.get(categoryIndex) + "  \u25be");
+
+        shownMaps.clear();
+        for (Depot.BaseMap m : allMaps)
+            if (want == null || want.equals(m.category))
+                shownMaps.add(m);
+        mapAdapter.notifyDataSetChanged();
+        mapStatus.setText(String.format("%d of %d installed",
+                installedMaps.size(), allMaps.size()));
+    }
+
+    private void install(final Depot.BaseMap map) {
+        mapStatus.setText("Getting " + map.name + "…");
+        baseMaps.install(map, mapCallback());
+    }
+
+    private void uninstall(final Depot.BaseMap map) {
+        mapStatus.setText("Removing " + map.name + "…");
+        baseMaps.uninstall(map, mapCallback());
+    }
+
+    private BaseMapInstaller.Callback mapCallback() {
+        return new BaseMapInstaller.Callback() {
+            @Override
+            public void onInstalled(Depot.BaseMap m, java.io.File dest) {
+                installedMaps.add(m.id);
+                mapAdapter.notifyDataSetChanged();
+                mapStatus.setText(m.name
+                        + " installed — it is in ATAK's map source list.");
+            }
+
+            @Override
+            public void onRemoved(Depot.BaseMap m) {
+                installedMaps.remove(m.id);
+                mapAdapter.notifyDataSetChanged();
+                mapStatus.setText(m.name + " removed.");
+            }
+
+            @Override
+            public void onError(Depot.BaseMap m, String message) {
+                Log.w(TAG, "base map " + m.id + ": " + message);
+                mapStatus.setText(m.name + " failed: " + message);
+            }
+        };
+    }
+
+    // ------------------------------------------------------------ public lands
+
+    private void loadForests() {
+        client.fetchForests(new DepotClient.ForestCallback() {
+            @Override
+            public void onForests(List<Depot.Forest> fetched) {
+                Log.i(TAG, "onForests count=" + fetched.size());
+                allForests.clear();
+                allForests.addAll(fetched);
+                refreshInstalledForests();
+                applyForestFilter();
+            }
+
+            @Override
+            public void onError(String message) {
+                Log.w(TAG, "forest catalog: " + message);
+                forestStatus.setText("Could not read forests: " + message);
+            }
+        });
+    }
+
+    /** Ask the filesystem once per listing rather than once per row. */
+    private void refreshInstalledForests() {
+        installedForests.clear();
+        for (Depot.Forest f : allForests)
+            if (ForestInstaller.isInstalled(f))
+                installedForests.add(f.id);
+    }
+
+    private void applyForestFilter() {
+        final String q = forestSearch.getText().toString().trim().toLowerCase();
+        shownForests.clear();
+        for (Depot.Forest f : allForests)
+            if (q.isEmpty() || f.name.toLowerCase().contains(q))
+                shownForests.add(f);
+        forestAdapter.notifyDataSetChanged();
+
+        if (activeForestId == null)
+            forestStatus.setText(String.format("%d of %d installed",
+                    installedForests.size(), allForests.size()));
+    }
+
+    private void installForest(final Depot.Forest forest) {
+        if (activeForestId != null) {
+            toast("Already downloading — let it finish first.");
+            return;
+        }
+        activeForestId = forest.id;
+        forestDone = 0;
+        forestTotal = forest.bytes;
+        forestStatus.setText("Getting " + forest.name + " — "
+                + Depot.bytes(forest.bytes));
+        forestAdapter.notifyDataSetChanged();
+        forests.install(forest, forestCallback());
+    }
+
+    private void uninstallForest(final Depot.Forest forest) {
+        forestStatus.setText("Removing " + forest.name + "…");
+        forests.uninstall(forest, forestCallback());
+    }
+
+    private ForestInstaller.Callback forestCallback() {
+        return new ForestInstaller.Callback() {
+            @Override
+            public void onProgress(Depot.Forest f, long done, long total) {
+                forestDone = done;
+                forestTotal = total;
+                forestStatus.setText(f.name + " — " + Depot.bytes(done)
+                        + " of " + Depot.bytes(total));
+                forestAdapter.notifyDataSetChanged();
+            }
+
+            @Override
+            public void onInstalled(Depot.Forest f, java.io.File dest) {
+                activeForestId = null;
+                installedForests.add(f.id);
+                forestAdapter.notifyDataSetChanged();
+                forestStatus.setText(f.name
+                        + " installed — it is in ATAK's map layer list.");
+            }
+
+            @Override
+            public void onRemoved(Depot.Forest f) {
+                installedForests.remove(f.id);
+                forestAdapter.notifyDataSetChanged();
+                applyForestFilter();
+            }
+
+            @Override
+            public void onError(Depot.Forest f, String message) {
+                Log.w(TAG, "forest " + f.id + ": " + message);
+                activeForestId = null;
+                forestAdapter.notifyDataSetChanged();
+                forestStatus.setText(f.name + " failed: " + message);
+            }
+        };
+    }
+
+    private final class ForestAdapter extends ArrayAdapter<Depot.Forest> {
+
+        ForestAdapter(Context ctx) {
+            super(ctx, 0, shownForests);
+        }
+
+        @Override
+        public View getView(int position, View convert, ViewGroup parent) {
+            View row = convert;
+            if (row == null)
+                row = LayoutInflater.from(pluginContext)
+                        .inflate(R.layout.region_row, parent, false);
+
+            final Depot.Forest forest = getItem(position);
+            if (row == null || forest == null)
+                return row;
+
+            final TextView name = row.findViewById(R.id.region_name);
+            final TextView detail = row.findViewById(R.id.region_detail);
+            final Button action = row.findViewById(R.id.region_action);
+            final ProgressBar bar = row.findViewById(R.id.region_progress);
+
+            name.setText(forest.name);
+            detail.setText(forest.describe());
+
+            final boolean active = forest.id.equals(activeForestId);
+            final boolean done = installedForests.contains(forest.id);
+
+            if (active && forestTotal > 0) {
+                bar.setVisibility(View.VISIBLE);
+                bar.setProgress((int) (forestDone * 100L / forestTotal));
+            } else {
+                bar.setVisibility(View.GONE);
+            }
+
+            // While one package is downloading the others are not offered: these
+            // run to a gigabyte and two at once on a phone hotspot serves nobody.
+            action.setEnabled(active || activeForestId == null);
+            action.setText(active ? R.string.cancel
+                    : done ? R.string.remove : R.string.get);
+            action.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (active) {
+                        forests.cancel();
+                        activeForestId = null;
+                        forestStatus.setText("Cancelled.");
+                        forestAdapter.notifyDataSetChanged();
+                    } else if (done) {
+                        uninstallForest(forest);
+                    } else {
+                        installForest(forest);
+                    }
+                }
+            });
+            return row;
+        }
+    }
+
     private void toast(String s) {
         Toast.makeText(hostContext(), s, Toast.LENGTH_SHORT).show();
+    }
+
+    // -------------------------------------------------------------- base maps
+
+    private final class BaseMapAdapter extends ArrayAdapter<Depot.BaseMap> {
+
+        BaseMapAdapter(Context ctx) {
+            super(ctx, 0, shownMaps);
+        }
+
+        @Override
+        public View getView(int position, View convert, ViewGroup parent) {
+            View row = convert;
+            if (row == null)
+                row = LayoutInflater.from(pluginContext)
+                        .inflate(R.layout.region_row, parent, false);
+
+            final Depot.BaseMap map = getItem(position);
+            if (map == null)
+                return row;
+
+            final TextView name = row.findViewById(R.id.region_name);
+            final TextView detail = row.findViewById(R.id.region_detail);
+            final Button action = row.findViewById(R.id.region_action);
+            row.findViewById(R.id.region_progress).setVisibility(View.GONE);
+
+            name.setText(map.name);
+            detail.setText(map.describe());
+
+            // One button that flips rather than a swipe: a hidden gesture is a
+            // poor fit for a list read with gloves on, and removing a map source
+            // is cheap to undo -- the row goes straight back to Get.
+            final boolean done = installedMaps.contains(map.id);
+            action.setEnabled(true);
+            action.setText(done ? R.string.remove : R.string.get);
+            action.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (done)
+                        uninstall(map);
+                    else
+                        install(map);
+                }
+            });
+            return row;
+        }
     }
 
     // ------------------------------------------------------------------ list

@@ -5,8 +5,8 @@
     android:orientation="vertical"
     android:padding="8dp">
 
-    <!-- Landing: pick what kind of data you are after. Two kinds today; the
-         layout is a list of choices so a third does not need a redesign. -->
+    <!-- Landing: pick what kind of data you are after. Three kinds today; the
+         layout is a list of choices so a fourth does not need a redesign. -->
     <LinearLayout
         android:id="@+id/home_view"
         android:layout_width="match_parent"
@@ -25,8 +25,16 @@
             android:id="@+id/btn_maps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
             android:minHeight="72dp"
             android:text="@string/maps_heading" />
+
+        <Button
+            android:id="@+id/btn_forests"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="72dp"
+            android:text="@string/forests_heading" />
 
         <TextView
             android:id="@+id/home_note"
@@ -34,6 +42,104 @@
             android:layout_height="wrap_content"
             android:paddingTop="10dp"
             android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Public lands: 148 units is far too many for a chooser dialog, so this
+         one filters as you type. Search rather than a picker also matches how
+         someone actually arrives here, knowing the name of their forest. -->
+    <LinearLayout
+        android:id="@+id/forest_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_back_forests"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/back" />
+
+            <!-- flagNoExtractUi on the imeOptions below: without it Android
+                 takes the whole screen with its own text box the moment you tap
+                 here, because ATAK runs landscape. Typing happens on the line. -->
+            <EditText
+                android:id="@+id/forest_search"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:hint="@string/search_forests"
+                android:imeOptions="actionSearch|flagNoExtractUi"
+                android:inputType="text"
+                android:maxLines="1"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/forest_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="4dp"
+            android:paddingTop="4dp"
+            android:textSize="13sp" />
+
+        <ListView
+            android:id="@+id/forest_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+
+    <!-- Base maps: category first, then the sources in it. -->
+    <LinearLayout
+        android:id="@+id/basemap_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_back_maps"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/back" />
+
+            <Button
+                android:id="@+id/category_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/basemap_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="4dp"
+            android:paddingTop="4dp"
+            android:textSize="13sp" />
+
+        <ListView
+            android:id="@+id/basemap_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:divider="#33FFFFFF"
+            android:dividerHeight="1dp" />
     </LinearLayout>
 
     <!-- Elevation: country first, then its regions. -->

@@ -31,6 +31,13 @@ public final class Depot {
     private static final Pattern CELL_KEY =
             Pattern.compile("[we]\\d{3}/[ns]\\d{2}\\.dt2");
 
+    /** Same reasoning for a base map id, which becomes a filename on the device. */
+    /** ArcGIS Online issues 32 hex characters and nothing else. */
+    private static final Pattern AGOL_ID = Pattern.compile("[0-9a-f]{32}");
+
+    private static final Pattern SOURCE_ID =
+            Pattern.compile("[a-z0-9][a-z0-9-]{0,63}");
+
     /** A downloadable region — a US state or a Canadian province. */
     public static final class Region {
         public final String id;
@@ -76,6 +83,63 @@ public final class Depot {
             if ("CA".equals(country))
                 return "Canada";
             return country;
+        }
+    }
+
+    /**
+     * A base map: one MOBAC map source XML, a few hundred bytes, that ATAK reads
+     * to draw live imagery and to cache areas for offline use.
+     */
+    public static final class BaseMap {
+        public final String id;
+        public final String name;
+        public final String category;
+        public final String description;
+        public final String provider;
+        public final String host;
+        public final String rights;
+        public final String maxZoom;
+        public final String file;
+        public final long bytes;
+        public final String sha256;
+
+        BaseMap(JSONObject o) {
+            id = o.optString("id");
+            if (!SOURCE_ID.matcher(id).matches())
+                throw new IllegalArgumentException("invalid base map id: " + id);
+
+            name = o.optString("name", id);
+            category = o.optString("category", "Other");
+            description = o.optString("description", "");
+            provider = o.optString("provider", "");
+            host = o.optString("host", "");
+            rights = o.optString("rights", "unverified");
+            maxZoom = o.optString("maxZoom", "");
+            file = o.optString("file");
+            bytes = o.optLong("bytes");
+            sha256 = o.optString("sha256");
+
+            if (file.isEmpty() || sha256.length() != 64)
+                throw new IllegalArgumentException(
+                        "base map " + id + " has no file or digest");
+        }
+
+        /** What the row says under the name: where the tiles come from. */
+        public String describe() {
+            final StringBuilder sb = new StringBuilder();
+            if (!description.isEmpty())
+                sb.append(description);
+            else if (!host.isEmpty())
+                sb.append(host);
+            if (!maxZoom.isEmpty())
+                sb.append(sb.length() > 0 ? " · " : "").append("zoom ")
+                        .append(maxZoom);
+            return sb.toString();
+        }
+
+        /** The filename ATAK stores it under. */
+        public String fileName() {
+            return id + ".xml";
         }
     }
 
@@ -179,6 +243,125 @@ public final class Depot {
             }
         });
         return regions;
+    }
+
+    /**
+     * The base maps on offer, grouped the way the catalog groups them. Ordered by
+     * category then name so the list reads like a menu rather than a directory.
+     */
+    /**
+     * A Forest Service basemap package -- one administrative unit's worth of the
+     * vector basemap that replaced the retired raster FSTopo service.
+     *
+     * The package itself is not on our depot. These are 55 MB to 1.4 GB each,
+     * 35.5 GB for the set, and the Forest Service reissues them; mirroring would
+     * cost storage to hand out a staler copy than the operator can get direct.
+     * So the catalog carries the ArcGIS Online item id and nothing else.
+     */
+    public static final class Forest {
+        public final String id;
+        public final String name;
+        public final String kind;
+        public final long bytes;
+        public final String agolId;
+
+        Forest(JSONObject o) {
+            id = o.optString("id");
+            if (!SOURCE_ID.matcher(id).matches())
+                throw new IllegalArgumentException("invalid forest id: " + id);
+
+            // This becomes a URL path segment on a host we do not control, so it
+            // is checked against the exact shape ArcGIS Online issues rather than
+            // trusted because it arrived over https.
+            agolId = o.optString("agolId");
+            if (!AGOL_ID.matcher(agolId).matches())
+                throw new IllegalArgumentException(
+                        "forest " + id + " has no usable item id");
+
+            name = o.optString("name", id);
+            kind = o.optString("kind", "forest");
+            bytes = o.optLong("bytes");
+        }
+
+        /** Where the package comes from. Built here so no caller can shape it. */
+        public String url() {
+            return "https://www.arcgis.com/sharing/rest/content/items/"
+                    + agolId + "/data";
+        }
+
+        /** The filename ATAK stores it under; the extension is what it scans for. */
+        public String fileName() {
+            return id + ".vtpk";
+        }
+
+        public String describe() {
+            return bytes > 0 ? Depot.bytes(bytes) : "size unknown";
+        }
+    }
+
+    public static List<Forest> parseForests(String json) throws Exception {
+        final JSONObject root = new JSONObject(json);
+        final JSONObject section = root.optJSONObject("forests");
+        if (section == null)
+            return Collections.emptyList();
+
+        final JSONArray arr = section.optJSONArray("forests");
+        if (arr == null)
+            return Collections.emptyList();
+
+        final List<Forest> out = new ArrayList<>();
+        for (int i = 0; i < arr.length(); i++) {
+            final JSONObject o = arr.optJSONObject(i);
+            if (o == null)
+                continue;
+            try {
+                out.add(new Forest(o));
+            } catch (IllegalArgumentException bad) {
+                com.atakmap.coremap.log.Log.w("MapDepot",
+                        "rejected forest: " + bad.getMessage());
+            }
+        }
+
+        Collections.sort(out, new Comparator<Forest>() {
+            @Override
+            public int compare(Forest a, Forest b) {
+                return a.name.compareToIgnoreCase(b.name);
+            }
+        });
+        return out;
+    }
+
+    public static List<BaseMap> parseBaseMaps(String json) throws Exception {
+        final JSONObject root = new JSONObject(json);
+        final JSONObject section = root.optJSONObject("basemaps");
+        if (section == null)
+            return Collections.emptyList();
+
+        final JSONArray arr = section.optJSONArray("sources");
+        if (arr == null)
+            return Collections.emptyList();
+
+        final List<BaseMap> maps = new ArrayList<>();
+        for (int i = 0; i < arr.length(); i++) {
+            final JSONObject o = arr.optJSONObject(i);
+            if (o == null)
+                continue;
+            try {
+                maps.add(new BaseMap(o));
+            } catch (IllegalArgumentException bad) {
+                com.atakmap.coremap.log.Log.w("MapDepot",
+                        "rejected base map: " + bad.getMessage());
+            }
+        }
+
+        Collections.sort(maps, new Comparator<BaseMap>() {
+            @Override
+            public int compare(BaseMap a, BaseMap b) {
+                final int c = a.category.compareToIgnoreCase(b.category);
+                return c != 0 ? c : a.name.compareToIgnoreCase(b.name);
+            }
+        });
+        return maps;
     }
 
     public static Manifest parseManifest(String json) throws Exception {
