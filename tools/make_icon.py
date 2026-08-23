@@ -28,7 +28,7 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.join(HERE, "..", "docs", "icon-source",
-                      "map_depot_icon-original.png")
+                      "map_depot_icon-detailed.png")
 ICON = os.path.join(HERE, "..", "app", "src", "main", "res", "drawable",
                     "ic_launcher.png")
 MANUAL = os.path.join(HERE, "..", "docs", "user_manual", "plugin_icon.png")
