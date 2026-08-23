@@ -88,6 +88,20 @@ public final class RegionInstaller {
         return FileSystemUtils.getItem(FileSystemUtils.DTED_DIRECTORY);
     }
 
+    /**
+     * Where partial downloads live while they are still partial.
+     *
+     * Deliberately NOT under the DTED tree. ATAK's Dt2FileWatcher scans that tree
+     * and tries to read everything in it as a cell, so a staging directory there
+     * produces "invalid dted file encountered" on every scan. ATAK's own tmp
+     * directory is on the same filesystem, so installing a finished cell is still
+     * a rename rather than a copy.
+     */
+    private static File stagingRoot() {
+        return new File(FileSystemUtils.getItem(FileSystemUtils.TMP_DIRECTORY),
+                "mapdepot");
+    }
+
     /** How many of a manifest's cells are already installed at the right size. */
     public static int installedCount(Depot.Manifest manifest) {
         final File root = dtedRoot();
@@ -156,7 +170,7 @@ public final class RegionInstaller {
                 + " to download");
 
         final String base = DepotClient.baseUrl() + "/dted/v1/";
-        final File staging = new File(root, ".mapdepot");
+        final File staging = stagingRoot();
         if (!staging.exists() && !staging.mkdirs())
             throw new IllegalStateException("cannot create " + staging);
 
@@ -187,9 +201,6 @@ public final class RegionInstaller {
                     cell.key);
         }
 
-        // The staging directory lives under DTED so a move is a rename on the
-        // same filesystem rather than a copy; leaving it behind would make ATAK
-        // scan files that are not cells.
         deleteQuietly(staging);
 
         postComplete(cb, installed, skipped);

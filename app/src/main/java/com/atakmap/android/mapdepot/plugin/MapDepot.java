@@ -15,6 +15,7 @@ import android.widget.Toast;
 
 import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
+import com.atakmap.android.maps.MapView;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
 import com.atakmap.android.mapdepot.RegionInstaller;
@@ -215,17 +216,19 @@ public class MapDepot implements IPlugin {
                             .append(region.cellCount).append(" of ")
                             .append(region.needCount).append(" cells.");
 
-                new AlertDialog.Builder(pluginContext)
+                // Strings still come from the plugin's own resources; only the
+                // window comes from the host.
+                new AlertDialog.Builder(hostContext())
                         .setTitle(region.name)
                         .setMessage(msg.toString())
-                        .setPositiveButton(R.string.get,
+                        .setPositiveButton(pluginContext.getString(R.string.get),
                                 new DialogInterface.OnClickListener() {
                                     @Override
                                     public void onClick(DialogInterface d, int w) {
                                         start(region, manifest);
                                     }
                                 })
-                        .setNegativeButton(R.string.cancel, null)
+                        .setNegativeButton(pluginContext.getString(R.string.cancel), null)
                         .show();
             }
 
@@ -287,8 +290,20 @@ public class MapDepot implements IPlugin {
         });
     }
 
+    /**
+     * A dialog needs a window, and a window needs an Activity token. The plugin
+     * context is not an Activity -- it exists to resolve this plugin's own
+     * resources -- so anything with a window has to be built against ATAK's
+     * context instead. Getting this wrong does not degrade: it throws
+     * BadTokenException on the main thread and takes ATAK down with it.
+     */
+    private Context hostContext() {
+        final MapView mv = MapView.getMapView();
+        return mv != null ? mv.getContext() : pluginContext;
+    }
+
     private void toast(String s) {
-        Toast.makeText(pluginContext, s, Toast.LENGTH_SHORT).show();
+        Toast.makeText(hostContext(), s, Toast.LENGTH_SHORT).show();
     }
 
     // ------------------------------------------------------------------ list
