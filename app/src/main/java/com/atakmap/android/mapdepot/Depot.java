@@ -40,6 +40,22 @@ public final class Depot {
      */
     private static final Pattern MAP_ID = Pattern.compile("[A-Za-z0-9 .'-]{1,120}");
 
+    /**
+     * A region id becomes part of a filename in the cache directory, so it is
+     * held to the same closed alphabet as every other id here. Uppercase is
+     * allowed because these are postal codes: US-CA, CA-AB.
+     */
+    private static final Pattern REGION_ID =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]{0,63}");
+
+    /**
+     * A manifest path is appended to the depot URL. It cannot reach another host
+     * -- it is always appended after a slash, so the authority has already been
+     * parsed -- but it has no business containing a traversal either.
+     */
+    private static final Pattern MANIFEST_PATH =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._/-]{0,191}");
+
     /** ArcGIS Online issues 32 hex characters and nothing else. */
     private static final Pattern AGOL_ID = Pattern.compile("[0-9a-f]{32}");
 
@@ -94,8 +110,15 @@ public final class Depot {
                         cells.add(k);
                 }
 
-            if (id.isEmpty() || manifestPath.isEmpty())
-                throw new IllegalArgumentException("region missing id or manifest");
+            // Checked as strictly as every other id in this file. This one was
+            // written first and was long the exception: only tested for
+            // emptiness, while becoming a filename in ATAK's cache directory.
+            if (!REGION_ID.matcher(id).matches())
+                throw new IllegalArgumentException("invalid region id: " + id);
+            if (!MANIFEST_PATH.matcher(manifestPath).matches()
+                    || manifestPath.contains(".."))
+                throw new IllegalArgumentException(
+                        "region " + id + " has an unusable manifest path");
         }
 
         /**

@@ -223,6 +223,10 @@ public final class DepotClient {
                 final File cache = new File(cacheDir, "manifest-"
                         + region.id + ".json");
                 try {
+                    // Belt to the id pattern's braces: this is the one write in
+                    // the plugin whose path is built from a catalog string, so
+                    // it is checked for containment like every other one.
+                    guardInside(cacheDir, cache);
                     final String body = get(baseUrl() + "/" + region.manifestPath);
                     final Depot.Manifest m = Depot.parseManifest(body);
                     write(cache, body);
@@ -305,6 +309,17 @@ public final class DepotClient {
         } finally {
             conn.disconnect();
         }
+    }
+
+    /**
+     * Refuses a path that escapes the directory it belongs in. Same check the
+     * installers apply before writing; a cache file is no less worth guarding
+     * because it is small.
+     */
+    private static void guardInside(File dir, File f) throws Exception {
+        final String base = dir.getCanonicalPath();
+        if (!f.getCanonicalPath().startsWith(base + File.separator))
+            throw new IllegalStateException("path escapes " + base + ": " + f);
     }
 
     private static void write(File f, String body) {
