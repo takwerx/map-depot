@@ -14,6 +14,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -100,6 +102,41 @@ public final class RegionInstaller {
     private static File stagingRoot() {
         return new File(FileSystemUtils.getItem(FileSystemUtils.TMP_DIRECTORY),
                 "mapdepot");
+    }
+
+    /**
+     * Every DTED cell on this device, keyed the way the catalog names them
+     * ("w116/n33.dt2"), with the size found on disk.
+     *
+     * Read once and shared across the whole region list. The alternative was to
+     * stat each region's cells separately, which walks the same tree 59 times,
+     * or to trust the catalog's byte count -- which describes what the depot
+     * holds, not what the operator has, and is what made every row claim an
+     * install that had never happened.
+     */
+    public static Map<String, Long> scanInstalled() {
+        final Map<String, Long> found = new HashMap<>();
+        final File root = dtedRoot();
+        final File[] lonDirs = root.listFiles();
+        if (lonDirs == null)
+            return found;
+
+        for (File lon : lonDirs) {
+            if (!lon.isDirectory())
+                continue;
+            final File[] cells = lon.listFiles();
+            if (cells == null)
+                continue;
+            for (File cell : cells) {
+                if (!cell.isFile())
+                    continue;
+                final String name = cell.getName().toLowerCase();
+                if (!name.endsWith(".dt2"))
+                    continue;
+                found.put(lon.getName().toLowerCase() + "/" + name, cell.length());
+            }
+        }
+        return found;
     }
 
     /** How many of a manifest's cells are already installed at the right size. */

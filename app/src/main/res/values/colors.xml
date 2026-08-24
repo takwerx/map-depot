@@ -4,5 +4,8 @@
     <color name="white">#ffffff</color>
     <color name="darker_gray">#121212</color>
     <color name="heading_yellow">#dfb228</color>
+    <!-- The green ATAK itself uses for an active overlay, so "tap to go there"
+         reads as the same kind of affordance rather than a new one. -->
+    <color name="action_green">#4caf50</color>
 
 </resources>

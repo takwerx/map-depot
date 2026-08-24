@@ -7,7 +7,7 @@
 
     <!-- Landing -->
     <string name="elevation_heading">Elevation (DTED2)</string>
-    <string name="maps_heading">Base Maps</string>
+    <string name="maps_heading">Streaming Base Maps</string>
 
 
     <!-- Depot pane -->
@@ -17,8 +17,10 @@
     <string name="cancel">Cancel</string>
     <string name="installed">Installed</string>
     <string name="remove">Remove</string>
-    <string name="forests_heading">Public Lands</string>
+    <string name="forests_heading">Offline Public Lands</string>
     <string name="search_forests">Search forests…</string>
+    <string name="recmaps_heading">Offline Ranger District Maps</string>
+    <string name="search_recmaps">Search district or forest…</string>
     <string name="partial">Partial</string>
     <string name="choose_category">Category</string>
     <string name="all_categories">All categories</string>

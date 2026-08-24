@@ -74,7 +74,8 @@ public final class DepotClient {
     }
 
     public interface ForestCallback {
-        void onForests(List<Depot.Forest> forests);
+        /** Both package kinds come from the one catalog document, so both arrive together. */
+        void onForests(List<Depot.Forest> forests, List<Depot.RecMap> recMaps);
 
         void onError(String message);
     }
@@ -181,13 +182,15 @@ public final class DepotClient {
                 final File cache = new File(cacheDir, CATALOG);
                 try {
                     final String body = get(baseUrl() + "/" + CATALOG);
-                    final List<Depot.Forest> forests = Depot.parseForests(body);
                     write(cache, body);
-                    postForests(cb, forests);
+                    postForests(cb, Depot.parseForests(body),
+                            Depot.parseRecMaps(body));
                 } catch (final Exception e) {
-                    Log.w(TAG, "forest fetch failed: " + describe(e));
+                    Log.w(TAG, "package fetch failed: " + describe(e));
                     try {
-                        postForests(cb, Depot.parseForests(read(cache)));
+                        final String cached = read(cache);
+                        postForests(cb, Depot.parseForests(cached),
+                                Depot.parseRecMaps(cached));
                     } catch (Exception noCache) {
                         final String msg = describe(e);
                         main.post(new Runnable() {
@@ -203,11 +206,11 @@ public final class DepotClient {
     }
 
     private void postForests(final ForestCallback cb,
-            final List<Depot.Forest> forests) {
+            final List<Depot.Forest> forests, final List<Depot.RecMap> recMaps) {
         main.post(new Runnable() {
             @Override
             public void run() {
-                cb.onForests(forests);
+                cb.onForests(forests, recMaps);
             }
         });
     }

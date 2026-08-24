@@ -7,6 +7,9 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.text.Editable;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.text.TextWatcher;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -22,7 +25,7 @@ import com.atakmap.android.maps.MapView;
 import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
-import com.atakmap.android.mapdepot.ForestInstaller;
+import com.atakmap.android.mapdepot.PackageInstaller;
 import com.atakmap.android.mapdepot.RegionInstaller;
 import com.atakmap.coremap.log.Log;
 
@@ -66,7 +69,7 @@ public class MapDepot implements IPlugin {
     private DepotClient client;
     private RegionInstaller installer;
     private BaseMapInstaller baseMaps;
-    private ForestInstaller forests;
+    private PackageInstaller packages;
 
     /** Everything the catalog offers. */
     private final List<Depot.Region> allRegions = new ArrayList<>();
@@ -96,10 +99,22 @@ public class MapDepot implements IPlugin {
     /** Regions known to be fully installed, so a row can say so without rescanning. */
     private final Set<String> completeById = new HashSet<>();
 
+    /**
+     * Forests and ranger district maps are the same interaction -- search a long
+     * list of units, download one large file -- so they share one screen, and a
+     * mode says which list it is showing.
+     */
+    private enum PackageMode {
+        FORESTS, RECMAPS
+    }
+
+    private PackageMode packageMode = PackageMode.FORESTS;
+
     private final List<Depot.Forest> allForests = new ArrayList<>();
-    private final List<Depot.Forest> shownForests = new ArrayList<>();
-    private final Set<String> installedForests = new HashSet<>();
-    private ForestAdapter forestAdapter;
+    private final List<Depot.RecMap> allRecMaps = new ArrayList<>();
+    private final List<Depot.Package> shownPackages = new ArrayList<>();
+    private final Set<String> installedPackages = new HashSet<>();
+    private PackageAdapter packageAdapter;
     private TextView forestStatus;
     private EditText forestSearch;
     private View forestView;
@@ -153,7 +168,7 @@ public class MapDepot implements IPlugin {
         client = new DepotClient(cacheDir());
         installer = new RegionInstaller();
         baseMaps = new BaseMapInstaller();
-        forests = new ForestInstaller();
+        packages = new PackageInstaller();
         uiService.addToolbarItem(toolbarItem);
     }
 
@@ -167,9 +182,9 @@ public class MapDepot implements IPlugin {
             baseMaps.shutdown();
             baseMaps = null;
         }
-        if (forests != null) {
-            forests.shutdown();
-            forests = null;
+        if (packages != null) {
+            packages.shutdown();
+            packages = null;
         }
         if (client != null) {
             client.shutdown();
@@ -229,14 +244,22 @@ public class MapDepot implements IPlugin {
         forestView = root.findViewById(R.id.forest_view);
         forestStatus = root.findViewById(R.id.forest_status);
         forestSearch = root.findViewById(R.id.forest_search);
-        forestAdapter = new ForestAdapter(pluginContext);
-        ((ListView) root.findViewById(R.id.forest_list)).setAdapter(forestAdapter);
+        packageAdapter = new PackageAdapter(pluginContext);
+        ((ListView) root.findViewById(R.id.forest_list)).setAdapter(packageAdapter);
 
         root.findViewById(R.id.btn_forests).setOnClickListener(
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        showForests();
+                        showPackages(PackageMode.FORESTS);
+                    }
+                });
+
+        root.findViewById(R.id.btn_recmaps).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showPackages(PackageMode.RECMAPS);
                     }
                 });
 
@@ -303,15 +326,24 @@ public class MapDepot implements IPlugin {
         forestView.setVisibility(View.GONE);
     }
 
-    private void showForests() {
+    private void showPackages(PackageMode mode) {
+        packageMode = mode;
         homeView.setVisibility(View.GONE);
         dtedView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.VISIBLE);
+        forestSearch.setHint(mode == PackageMode.FORESTS
+                ? R.string.search_forests : R.string.search_recmaps);
+        forestSearch.setText("");
         if (!catalogLoaded)
             loadCatalog();
         else
             applyForestFilter();
+    }
+
+    /** The list behind the current mode, in catalog order. */
+    private List<? extends Depot.Package> sourceList() {
+        return packageMode == PackageMode.FORESTS ? allForests : allRecMaps;
     }
 
     private void showBaseMaps() {
@@ -395,6 +427,35 @@ public class MapDepot implements IPlugin {
         adapter.notifyDataSetChanged();
     }
 
+    /**
+     * Asks the device what DTED it already holds and tells every region.
+     *
+     * One scan of the tree, shared by all 59 rows. Done off the main thread
+     * because a full CONUS install is tens of thousands of files, then the rows
+     * are refreshed on it.
+     */
+    private void measureRegions() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final Map<String, Long> onDevice = RegionInstaller.scanInstalled();
+                final MapView mv = MapView.getMapView();
+                if (mv == null)
+                    return;
+                mv.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        for (Depot.Region r : allRegions)
+                            r.measureAgainst(onDevice);
+                        if (adapter != null)
+                            adapter.notifyDataSetChanged();
+                        Log.i(TAG, "device holds " + onDevice.size() + " DTED cells");
+                    }
+                });
+            }
+        }, "mapdepot-dted-scan").start();
+    }
+
     private void loadCatalog() {
         status.setText(R.string.loading_catalog);
         client.fetchCatalog(new DepotClient.CatalogCallback() {
@@ -404,6 +465,7 @@ public class MapDepot implements IPlugin {
                 catalogLoaded = true;
                 allRegions.clear();
                 allRegions.addAll(fetched);
+                measureRegions();
                 populateCountries();
                 applyCountryFilter();
                 loadBaseMaps();
@@ -669,6 +731,14 @@ public class MapDepot implements IPlugin {
             @Override
             public void onError(Depot.BaseMap m, String message) {
                 Log.w(TAG, "base map " + m.id + ": " + message);
+                if (BaseMapInstaller.STALE_CATALOG.equals(message)) {
+                    // Refetch and say so, rather than reporting a checksum
+                    // failure the operator can neither understand nor act on.
+                    mapStatus.setText("Depot has a newer " + m.name
+                            + " — refreshing, then tap Get again.");
+                    loadBaseMaps();
+                    return;
+                }
                 mapStatus.setText(m.name + " failed: " + message);
             }
         };
@@ -679,103 +749,150 @@ public class MapDepot implements IPlugin {
     private void loadForests() {
         client.fetchForests(new DepotClient.ForestCallback() {
             @Override
-            public void onForests(List<Depot.Forest> fetched) {
-                Log.i(TAG, "onForests count=" + fetched.size());
+            public void onForests(List<Depot.Forest> fetched,
+                    List<Depot.RecMap> recMaps) {
+                Log.i(TAG, "onForests forests=" + fetched.size()
+                        + " recmaps=" + recMaps.size());
                 allForests.clear();
                 allForests.addAll(fetched);
-                refreshInstalledForests();
+                allRecMaps.clear();
+                allRecMaps.addAll(recMaps);
+                refreshInstalledPackages();
                 applyForestFilter();
             }
 
             @Override
             public void onError(String message) {
-                Log.w(TAG, "forest catalog: " + message);
-                forestStatus.setText("Could not read forests: " + message);
+                Log.w(TAG, "package catalog: " + message);
+                forestStatus.setText("Could not read packages: " + message);
             }
         });
     }
 
     /** Ask the filesystem once per listing rather than once per row. */
-    private void refreshInstalledForests() {
-        installedForests.clear();
+    private void refreshInstalledPackages() {
+        installedPackages.clear();
         for (Depot.Forest f : allForests)
-            if (ForestInstaller.isInstalled(f))
-                installedForests.add(f.id);
+            if (PackageInstaller.isInstalled(f))
+                installedPackages.add(f.id());
+        for (Depot.RecMap m : allRecMaps)
+            if (PackageInstaller.isInstalled(m))
+                installedPackages.add(m.id());
     }
 
     private void applyForestFilter() {
         final String q = forestSearch.getText().toString().trim().toLowerCase();
-        shownForests.clear();
-        for (Depot.Forest f : allForests)
-            if (q.isEmpty() || f.name.toLowerCase().contains(q))
-                shownForests.add(f);
-        forestAdapter.notifyDataSetChanged();
+        shownPackages.clear();
+        for (Depot.Package p : sourceList())
+            if (q.isEmpty() || matches(p, q))
+                shownPackages.add(p);
+        packageAdapter.notifyDataSetChanged();
 
         if (activeForestId == null)
-            forestStatus.setText(String.format("%d of %d installed",
-                    installedForests.size(), allForests.size()));
+            forestStatus.setText(statusLine(q));
     }
 
-    private void installForest(final Depot.Forest forest) {
+    /**
+     * An empty list has three quite different causes and they must not look
+     * alike: nothing published, nothing matched, or nothing installed. Reporting
+     * "0 of 0 installed" for all three reads as a broken search.
+     */
+    private String statusLine(String query) {
+        final int total = sourceList().size();
+        if (total == 0)
+            return packageMode == PackageMode.RECMAPS
+                    ? "No ranger district maps in the catalog yet."
+                    : "No packages in the catalog yet.";
+
+        if (shownPackages.isEmpty())
+            return "Nothing matches \"" + query + "\" in " + total + ".";
+
+        int held = 0;
+        for (Depot.Package p : sourceList())
+            if (installedPackages.contains(p.id()))
+                held++;
+
+        if (!query.isEmpty())
+            return String.format("%d of %d shown · %d installed",
+                    shownPackages.size(), total, held);
+        return String.format("%d of %d installed", held, total);
+    }
+
+    /**
+     * Search the unit as well as the name: someone looking for a district often
+     * knows the forest it sits in rather than the district's own name.
+     */
+    private static boolean matches(Depot.Package p, String q) {
+        if (p.name().toLowerCase().contains(q))
+            return true;
+        if (p instanceof Depot.RecMap) {
+            final Depot.RecMap m = (Depot.RecMap) p;
+            return m.unit.toLowerCase().contains(q)
+                    || m.state.toLowerCase().contains(q);
+        }
+        return false;
+    }
+
+    private void installPackage(final Depot.Package pkg) {
         if (activeForestId != null) {
             toast("Already downloading — let it finish first.");
             return;
         }
-        activeForestId = forest.id;
+        activeForestId = pkg.id();
         forestDone = 0;
-        forestTotal = forest.bytes;
-        forestStatus.setText("Getting " + forest.name + " — "
-                + Depot.bytes(forest.bytes));
-        forestAdapter.notifyDataSetChanged();
-        forests.install(forest, forestCallback());
+        forestTotal = pkg.bytes();
+        forestStatus.setText("Getting " + pkg.name() + " — "
+                + Depot.bytes(pkg.bytes()));
+        packageAdapter.notifyDataSetChanged();
+        packages.install(pkg, packageCallback());
     }
 
-    private void uninstallForest(final Depot.Forest forest) {
-        forestStatus.setText("Removing " + forest.name + "…");
-        forests.uninstall(forest, forestCallback());
+    private void uninstallPackage(final Depot.Package pkg) {
+        forestStatus.setText("Removing " + pkg.name() + "…");
+        packages.uninstall(pkg, packageCallback());
     }
 
-    private ForestInstaller.Callback forestCallback() {
-        return new ForestInstaller.Callback() {
+    private PackageInstaller.Callback packageCallback() {
+        return new PackageInstaller.Callback() {
             @Override
-            public void onProgress(Depot.Forest f, long done, long total) {
+            public void onProgress(Depot.Package p, long done, long total) {
                 forestDone = done;
                 forestTotal = total;
-                forestStatus.setText(f.name + " — " + Depot.bytes(done)
+                forestStatus.setText(p.name() + " — " + Depot.bytes(done)
                         + " of " + Depot.bytes(total));
-                forestAdapter.notifyDataSetChanged();
+                packageAdapter.notifyDataSetChanged();
             }
 
             @Override
-            public void onInstalled(Depot.Forest f, java.io.File dest) {
+            public void onInstalled(Depot.Package p, java.io.File dest) {
                 activeForestId = null;
-                installedForests.add(f.id);
-                forestAdapter.notifyDataSetChanged();
-                forestStatus.setText(f.name
+                installedPackages.add(p.id());
+                packageAdapter.notifyDataSetChanged();
+                forestStatus.setText(p.name()
                         + " installed — it is in ATAK's map layer list.");
             }
 
             @Override
-            public void onRemoved(Depot.Forest f) {
-                installedForests.remove(f.id);
-                forestAdapter.notifyDataSetChanged();
+            public void onRemoved(Depot.Package p) {
+                installedPackages.remove(p.id());
+                packageAdapter.notifyDataSetChanged();
                 applyForestFilter();
             }
 
             @Override
-            public void onError(Depot.Forest f, String message) {
-                Log.w(TAG, "forest " + f.id + ": " + message);
+            public void onError(Depot.Package p, String message) {
+                Log.w(TAG, "package " + p.id() + ": " + message);
                 activeForestId = null;
-                forestAdapter.notifyDataSetChanged();
-                forestStatus.setText(f.name + " failed: " + message);
+                packageAdapter.notifyDataSetChanged();
+                forestStatus.setText(p.name() + " failed: " + message);
             }
         };
     }
 
-    private final class ForestAdapter extends ArrayAdapter<Depot.Forest> {
+    private final class PackageAdapter extends ArrayAdapter<Depot.Package> {
 
-        ForestAdapter(Context ctx) {
-            super(ctx, 0, shownForests);
+        PackageAdapter(Context ctx) {
+            super(ctx, 0, shownPackages);
         }
 
         @Override
@@ -785,8 +902,8 @@ public class MapDepot implements IPlugin {
                 row = LayoutInflater.from(pluginContext)
                         .inflate(R.layout.region_row, parent, false);
 
-            final Depot.Forest forest = getItem(position);
-            if (row == null || forest == null)
+            final Depot.Package pkg = getItem(position);
+            if (row == null || pkg == null)
                 return row;
 
             final TextView name = row.findViewById(R.id.region_name);
@@ -794,11 +911,37 @@ public class MapDepot implements IPlugin {
             final Button action = row.findViewById(R.id.region_action);
             final ProgressBar bar = row.findViewById(R.id.region_progress);
 
-            name.setText(forest.name);
-            detail.setText(forest.describe());
+            final boolean active = pkg.id().equals(activeForestId);
+            final boolean done = installedPackages.contains(pkg.id());
 
-            final boolean active = forest.id.equals(activeForestId);
-            final boolean done = installedForests.contains(forest.id);
+            name.setText(pkg.name());
+            if (done) {
+                // Only the hint is coloured; the size stays the same weight as
+                // every other row so the list does not turn into a christmas
+                // tree once a few things are installed.
+                final String hint = " · tap to go there";
+                final SpannableString line =
+                        new SpannableString(pkg.describe() + hint);
+                line.setSpan(
+                        new ForegroundColorSpan(pluginContext.getResources()
+                                .getColor(R.color.action_green)),
+                        line.length() - hint.length(), line.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                detail.setText(line);
+            } else {
+                detail.setText(pkg.describe());
+            }
+
+            // Tapping the row itself sends the map there, the way tapping an
+            // entry in ATAK's overlay list does. The button keeps its own click,
+            // so Get and Remove are unaffected.
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (done)
+                        PackageInstaller.goTo(pkg);
+                }
+            });
 
             if (active && forestTotal > 0) {
                 bar.setVisibility(View.VISIBLE);
@@ -816,14 +959,14 @@ public class MapDepot implements IPlugin {
                 @Override
                 public void onClick(View v) {
                     if (active) {
-                        forests.cancel();
+                        packages.cancel();
                         activeForestId = null;
                         forestStatus.setText("Cancelled.");
-                        forestAdapter.notifyDataSetChanged();
+                        packageAdapter.notifyDataSetChanged();
                     } else if (done) {
-                        uninstallForest(forest);
+                        uninstallPackage(pkg);
                     } else {
-                        installForest(forest);
+                        installPackage(pkg);
                     }
                 }
             });
@@ -917,7 +1060,11 @@ public class MapDepot implements IPlugin {
                 action.setText(pct + "%");
             } else {
                 bar.setVisibility(View.GONE);
-                final boolean done = completeById.contains(region.id);
+                // The device scan is the authority. completeById only knows what
+                // finished downloading in this session, so on its own it called
+                // a region installed years ago "Get".
+                final boolean done = region.fullyHeld()
+                        || completeById.contains(region.id);
                 action.setEnabled(!done && activeRegionId == null);
                 action.setText(done ? R.string.installed : R.string.get);
             }

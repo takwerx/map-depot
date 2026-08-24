@@ -32,6 +32,14 @@ public final class Depot {
             Pattern.compile("[we]\\d{3}/[ns]\\d{2}\\.dt2");
 
     /** Same reasoning for a base map id, which becomes a filename on the device. */
+    /**
+     * A map id becomes a query parameter on data.fs.usda.gov. Letters, digits,
+     * spaces, periods and hyphens are everything the Forest Service uses; an
+     * ampersand or equals here would append a parameter of someone else's
+     * choosing.
+     */
+    private static final Pattern MAP_ID = Pattern.compile("[A-Za-z0-9 .'-]{1,120}");
+
     /** ArcGIS Online issues 32 hex characters and nothing else. */
     private static final Pattern AGOL_ID = Pattern.compile("[0-9a-f]{32}");
 
@@ -46,9 +54,21 @@ public final class Depot {
         public final String manifestPath;
         public final int cellCount;
         public final int needCount;
+        /** True when the depot holds every cell this region needs. */
         public final boolean complete;
         public final long downloadBytes;
-        public final long installedBytes;
+
+        /** Size once fully installed. Not what this device holds -- see {@link #held}. */
+        public final long fullBytes;
+
+        /** Cell keys ("w116/n33.dt2"), so the device can be asked what it has. */
+        public final List<String> cells = new ArrayList<>();
+
+        /** Bytes of this region actually present on the device. */
+        private long heldBytes;
+
+        /** Cells of this region actually present on the device. */
+        private int heldCells;
 
         Region(JSONObject o) {
             id = o.optString("id");
@@ -59,21 +79,68 @@ public final class Depot {
             needCount = o.optInt("needCount", o.optInt("cellCount"));
             complete = o.optBoolean("complete", false);
             downloadBytes = o.optLong("downloadBytes");
-            installedBytes = o.optLong("bytes");
+            fullBytes = o.optLong("bytes");
+
+            final JSONArray keys = o.optJSONArray("cells");
+            if (keys != null)
+                for (int i = 0; i < keys.length(); i++) {
+                    final String k = keys.optString(i);
+                    if (CELL_KEY.matcher(k).matches())
+                        cells.add(k);
+                }
 
             if (id.isEmpty() || manifestPath.isEmpty())
                 throw new IllegalArgumentException("region missing id or manifest");
         }
 
         /**
-         * What the operator is deciding on is whether it fits on the device, so
-         * the row shows the installed size and nothing else. Cell counts and
-         * compressed transfer sizes are engineering detail; a partial region says
-         * "Partial" rather than quoting a fraction nobody can act on.
+         * Works out what this device holds, from one scan of the DTED tree.
+         *
+         * A cell counts as held only at its full length: a truncated .dt2 reads
+         * as valid to ATAK and quietly poisons line of sight, so a short file is
+         * treated as absent and will be fetched again.
+         */
+        public void measureAgainst(java.util.Map<String, Long> onDevice) {
+            heldBytes = 0;
+            heldCells = 0;
+            for (String key : cells) {
+                final Long len = onDevice.get(key);
+                if (len != null && len > 0) {
+                    heldBytes += len;
+                    heldCells++;
+                }
+            }
+        }
+
+        public long held() {
+            return heldBytes;
+        }
+
+        public boolean fullyHeld() {
+            return !cells.isEmpty() && heldCells == cells.size();
+        }
+
+        /**
+         * What the operator is deciding is whether to spend the download, so the
+         * row leads with what they already hold. Cell counts and compressed
+         * transfer sizes are engineering detail.
+         *
+         * "Partial" here means the depot itself does not have the whole region --
+         * Alaska above 60 degrees, most of Canada. That is a different statement
+         * from "you have some of it", and conflating the two is what made every
+         * row claim an install that had never happened.
          */
         public String describe() {
-            final String size = Depot.bytes(installedBytes);
-            return complete ? size : size + " · " + "Partial";
+            final String whole = Depot.bytes(fullBytes);
+            final String suffix = complete ? "" : " · Partial";
+
+            if (cells.isEmpty())
+                return whole + suffix;
+            if (heldCells == 0)
+                return whole + " to download" + suffix;
+            if (fullyHeld())
+                return "Installed · " + Depot.bytes(heldBytes) + suffix;
+            return Depot.bytes(heldBytes) + " of " + whole + suffix;
         }
 
         /** "US" / "CA" rendered for a person. */
@@ -137,9 +204,13 @@ public final class Depot {
             return sb.toString();
         }
 
-        /** The filename ATAK stores it under. */
+        /**
+         * The filename ATAK stores it under, and with it which reader picks the
+         * source up: {@code .xml} is a MOBAC source, {@code .json} a streaming
+         * config for the provider behind ATAK's own "TAK Maps".
+         */
         public String fileName() {
-            return id + ".xml";
+            return id + (file.endsWith(".json") ? ".json" : ".xml");
         }
     }
 
@@ -258,7 +329,7 @@ public final class Depot {
      * cost storage to hand out a staler copy than the operator can get direct.
      * So the catalog carries the ArcGIS Online item id and nothing else.
      */
-    public static final class Forest {
+    public static final class Forest implements Package {
         public final String id;
         public final String name;
         public final String kind;
@@ -284,19 +355,249 @@ public final class Depot {
         }
 
         /** Where the package comes from. Built here so no caller can shape it. */
+        @Override
         public String url() {
             return "https://www.arcgis.com/sharing/rest/content/items/"
                     + agolId + "/data";
         }
 
-        /** The filename ATAK stores it under; the extension is what it scans for. */
+        @Override
         public String fileName() {
+            return safeFileName(name, id, ".vtpk");
+        }
+
+        @Override
+        public String legacyFileName() {
             return id + ".vtpk";
         }
 
+        @Override
+        public String destination() {
+            return "imagery";
+        }
+
+        @Override
         public String describe() {
             return bytes > 0 ? Depot.bytes(bytes) : "size unknown";
         }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public long bytes() {
+            return bytes;
+        }
+    }
+
+    /**
+     * Something the depot names but does not host: a large file fetched from the
+     * agency that publishes it, dropped into ATAK's imagery folder.
+     *
+     * Forest basemaps and ranger district maps differ in almost nothing the
+     * installer cares about, so they share one, and the download machinery is
+     * written once.
+     */
+    public interface Package {
+        String id();
+
+        String name();
+
+        /** Where the file comes from. Built by the implementation so no caller shapes it. */
+        String url();
+
+        /**
+         * The filename ATAK stores it under.
+         *
+         * This is not housekeeping: ATAK names a package layer after its file and
+         * nothing else -- {@code CompactCacheDatasetDescriptorSpi} passes
+         * {@code file.getName()} straight through as the layer name -- so the
+         * filename is what the operator reads in the layer list. The extension is
+         * also what the imagery scanner matches on, so it has to stay.
+         */
+        String fileName();
+
+        /**
+         * What earlier builds called the file, so an install made before the
+         * names were readable is still recognised instead of downloaded again
+         * under a new one.
+         */
+        String legacyFileName();
+
+        /**
+         * The directory under ATAK's root this belongs in, which decides what
+         * kind of thing ATAK thinks it is.
+         *
+         * Not arbitrary: {@code ImageryFileTypeBase} assigns every format a path,
+         * and that path is the classification. A {@code .pdf} is
+         * {@code setPath("grg")} -- an image overlay that composites over
+         * whatever base map the operator is already using. A {@code .vtpk} is
+         * {@code setPath("native")} and belongs with the imagery, because it is a
+         * base map in its own right. Putting a district map in the imagery folder
+         * makes it something you switch to instead of something you switch on.
+         */
+        String destination();
+
+        /** Size the server will send, or 0 when unknown. */
+        long bytes();
+
+        /** The line under the name in a row. */
+        String describe();
+    }
+
+    /**
+     * A Forest Service ranger district map -- the GeoPDF visitor map handed out
+     * one at a time by the Forest Service Digital Maps site.
+     *
+     * ATAK registers PDF as an imagery type and bundles the GDAL PDF driver, and
+     * these carry real OGC geospatial PDF structure, so one lands in the imagery
+     * folder and scans in georeferenced with no conversion.
+     */
+    public static final class RecMap implements Package {
+        public final String id;
+        public final String name;
+        public final String unit;
+        public final String state;
+        public final long bytes;
+        private final String mapId;
+
+        RecMap(JSONObject o, String series) {
+            id = o.optString("id");
+            if (!SOURCE_ID.matcher(id).matches())
+                throw new IllegalArgumentException("invalid rec map id: " + id);
+
+            // mapId goes into a query string on a host we do not control, so it
+            // is held to printable ASCII without separators that could smuggle
+            // another parameter in.
+            mapId = o.optString("mapId");
+            if (mapId.isEmpty() || !MAP_ID.matcher(mapId).matches())
+                throw new IllegalArgumentException(
+                        "rec map " + id + " has no usable map id");
+
+            name = o.optString("name", id);
+            unit = o.optString("unit", "");
+            state = o.optString("state", "");
+            bytes = o.optLong("bytes");
+            this.series = series;
+        }
+
+        private final String series;
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public String url() {
+            return "https://data.fs.usda.gov/geodata/rastergateway/downloadMap.php"
+                    + "?mapID=" + enc(mapId)
+                    + "&mapType=pdf&seriesType=" + enc(series);
+        }
+
+        @Override
+        public String fileName() {
+            return safeFileName(name, id, ".pdf");
+        }
+
+        @Override
+        public String legacyFileName() {
+            return id + ".pdf";
+        }
+
+        @Override
+        public String destination() {
+            return "grg";
+        }
+
+        @Override
+        public long bytes() {
+            return bytes;
+        }
+
+        @Override
+        public String describe() {
+            final StringBuilder sb = new StringBuilder();
+            if (!unit.isEmpty())
+                sb.append(unit);
+            if (!state.isEmpty())
+                sb.append(sb.length() > 0 ? " · " : "").append(state);
+            sb.append(sb.length() > 0 ? " · " : "")
+                    .append(bytes > 0 ? Depot.bytes(bytes) : "size unknown");
+            return sb.toString();
+        }
+    }
+
+    /**
+     * A display name reduced to something safe to write to disk, keeping the
+     * spaces and periods that make it readable ("Mt. Hood National Forest").
+     * Anything outside the allowed set is dropped rather than substituted, so two
+     * different names cannot collapse onto the same file.
+     */
+    private static String safeFileName(String display, String id, String ext) {
+        final StringBuilder sb = new StringBuilder(display.length());
+        for (int i = 0; i < display.length(); i++) {
+            final char c = display.charAt(i);
+            final boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == ' ' || c == '.'
+                    || c == '-' || c == '(' || c == ')';
+            if (ok)
+                sb.append(c);
+        }
+        final String cleaned = sb.toString().trim();
+        return (cleaned.isEmpty() ? id : cleaned) + ext;
+    }
+
+    private static String enc(String s) {
+        try {
+            return java.net.URLEncoder.encode(s, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException never) {
+            throw new IllegalStateException(never);
+        }
+    }
+
+    public static List<RecMap> parseRecMaps(String json) throws Exception {
+        final JSONObject root = new JSONObject(json);
+        final JSONObject section = root.optJSONObject("recmaps");
+        if (section == null)
+            return Collections.emptyList();
+
+        final String series = section.optString("series", "Ranger District");
+        final JSONArray arr = section.optJSONArray("maps");
+        if (arr == null)
+            return Collections.emptyList();
+
+        final List<RecMap> out = new ArrayList<>();
+        for (int i = 0; i < arr.length(); i++) {
+            final JSONObject o = arr.optJSONObject(i);
+            if (o == null)
+                continue;
+            try {
+                out.add(new RecMap(o, series));
+            } catch (IllegalArgumentException bad) {
+                com.atakmap.coremap.log.Log.w("MapDepot",
+                        "rejected rec map: " + bad.getMessage());
+            }
+        }
+        Collections.sort(out, new Comparator<RecMap>() {
+            @Override
+            public int compare(RecMap a, RecMap b) {
+                return a.name.compareToIgnoreCase(b.name);
+            }
+        });
+        return out;
     }
 
     public static List<Forest> parseForests(String json) throws Exception {

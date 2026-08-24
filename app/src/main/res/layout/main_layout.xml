@@ -33,8 +33,16 @@
             android:id="@+id/btn_forests"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
             android:minHeight="72dp"
             android:text="@string/forests_heading" />
+
+        <Button
+            android:id="@+id/btn_recmaps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="72dp"
+            android:text="@string/recmaps_heading" />
 
         <TextView
             android:id="@+id/home_note"

@@ -32,6 +32,13 @@ public final class BaseMapInstaller {
     private static final int CONNECT_TIMEOUT = 20000;
     private static final int READ_TIMEOUT = 30000;
 
+    /**
+     * Raised when a download does not match the digest the catalog promised.
+     * Almost always staleness rather than corruption: the depot was republished
+     * after this catalog was read.
+     */
+    public static final String STALE_CATALOG = "catalog out of date";
+
     /** A map source XML far larger than this is not a map source XML. */
     private static final int MAX_BYTES = 512 * 1024;
 
@@ -59,9 +66,24 @@ public final class BaseMapInstaller {
                 "mobile" + File.separator + "mapsources");
     }
 
+    /**
+     * Where a source belongs, which depends on what kind it is.
+     *
+     * A MOBAC {@code .xml} goes in the mapsources folder. A streaming
+     * {@code .json} config is read by a different provider entirely -- ATAK's own
+     * "TAK Maps" is one of these -- and is matched by parsing any file in the
+     * imagery tree rather than by extension, so it sits at the imagery root
+     * alongside the packages.
+     */
+    public static File dirFor(Depot.BaseMap map) {
+        return map.fileName().endsWith(".json")
+                ? FileSystemUtils.getItem("imagery")
+                : mapSourceDir();
+    }
+
     /** Whether this source is already on the device at the right size. */
     public static boolean isInstalled(Depot.BaseMap map) {
-        final File f = new File(mapSourceDir(), map.fileName());
+        final File f = new File(dirFor(map), map.fileName());
         return f.isFile() && f.length() == map.bytes;
     }
 
@@ -103,7 +125,7 @@ public final class BaseMapInstaller {
         worker.execute(new Runnable() {
             @Override
             public void run() {
-                final File f = new File(mapSourceDir(), map.fileName());
+                final File f = new File(dirFor(map), map.fileName());
                 final boolean gone = !f.exists() || f.delete();
                 if (gone)
                     notifyAtak(f);
@@ -121,7 +143,7 @@ public final class BaseMapInstaller {
     }
 
     private File fetch(Depot.BaseMap map) throws Exception {
-        final File dir = mapSourceDir();
+        final File dir = dirFor(map);
         if (!dir.exists() && !dir.mkdirs())
             throw new IllegalStateException("cannot create " + dir);
 
@@ -159,7 +181,10 @@ public final class BaseMapInstaller {
         for (byte b : md.digest(body))
             hex.append(String.format("%02x", b));
         if (!map.sha256.equalsIgnoreCase(hex.toString()))
-            throw new IllegalStateException("checksum mismatch for " + map.id);
+            // Named so the caller can tell this apart from a corrupt download.
+            // It nearly always means the catalog held in memory is older than
+            // the depot, not that anything is wrong with the file.
+            throw new IllegalStateException(STALE_CATALOG);
 
         // Write beside the destination and rename, so a source is never half
         // written where ATAK might scan it.
