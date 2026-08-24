@@ -43,8 +43,13 @@ public final class Depot {
     /** ArcGIS Online issues 32 hex characters and nothing else. */
     private static final Pattern AGOL_ID = Pattern.compile("[0-9a-f]{32}");
 
+    // 128, not 64. The limit exists to bound something that becomes a filename
+    // and a URL path segment, not to be tight for its own sake -- and at 64 it
+    // silently dropped seventeen ranger district maps whose names are genuinely
+    // long ("Samuel R. McKelvie National Forest and Nebraska National Forest -
+    // East"). A rejected id is a map the operator cannot download.
     private static final Pattern SOURCE_ID =
-            Pattern.compile("[a-z0-9][a-z0-9-]{0,63}");
+            Pattern.compile("[a-z0-9][a-z0-9-]{0,127}");
 
     /** A downloadable region — a US state or a Canadian province. */
     public static final class Region {
@@ -140,7 +145,13 @@ public final class Depot {
                 return whole + " to download" + suffix;
             if (fullyHeld())
                 return "Installed · " + Depot.bytes(heldBytes) + suffix;
-            return Depot.bytes(heldBytes) + " of " + whole + suffix;
+
+            // "1.7 GB of 1.8 GB" is what this used to say, and for a state
+            // missing two cells out of sixty-eight the two numbers round to
+            // look identical. What the operator can act on is the shortfall.
+            return Depot.bytes(heldBytes) + " installed · "
+                    + Depot.bytes(Math.max(0L, fullBytes - heldBytes))
+                    + " missing" + suffix;
         }
 
         /** "US" / "CA" rendered for a person. */

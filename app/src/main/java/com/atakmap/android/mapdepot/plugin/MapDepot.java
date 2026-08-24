@@ -99,6 +99,9 @@ public class MapDepot implements IPlugin {
     /** Regions known to be fully installed, so a row can say so without rescanning. */
     private final Set<String> completeById = new HashSet<>();
 
+    /** The last scan of the DTED tree: cell key to size on disk. */
+    private final Map<String, Long> onDeviceCells = new HashMap<>();
+
     /**
      * Forests and ranger district maps are the same interaction -- search a long
      * list of units, download one large file -- so they share one screen, and a
@@ -109,6 +112,33 @@ public class MapDepot implements IPlugin {
     }
 
     private PackageMode packageMode = PackageMode.FORESTS;
+
+    /**
+     * Which packages the list shows. Cycles on tap rather than opening a chooser:
+     * three states is fewer than a dialog costs, and the button reads as its own
+     * label.
+     */
+    private enum Shown {
+        ALL, INSTALLED, AVAILABLE
+    }
+
+    private Shown packageShown = Shown.ALL;
+    private Shown mapShown = Shown.ALL;
+    private Shown regionShown = Shown.ALL;
+    private Button packageFilter, basemapFilter, regionFilter;
+    private Button cancelBar, cancelBarDted;
+
+    /** Next state in the All / Installed / Available cycle. */
+    private static Shown nextShown(Shown s) {
+        return s == Shown.ALL ? Shown.INSTALLED
+                : s == Shown.INSTALLED ? Shown.AVAILABLE : Shown.ALL;
+    }
+
+    private static int labelFor(Shown s) {
+        return s == Shown.INSTALLED ? R.string.filter_installed
+                : s == Shown.AVAILABLE ? R.string.filter_available
+                        : R.string.filter_all;
+    }
 
     private final List<Depot.Forest> allForests = new ArrayList<>();
     private final List<Depot.RecMap> allRecMaps = new ArrayList<>();
@@ -174,6 +204,16 @@ public class MapDepot implements IPlugin {
 
     @Override
     public void onStop() {
+        // Close the pane and let go of it. Its buttons hold a reference to this
+        // instance, and everything this instance owns is about to be null, so a
+        // pane left on screen after an unload is a tap away from taking ATAK
+        // down with a NullPointerException on the main thread.
+        if (pane != null) {
+            if (uiService != null && uiService.isPaneVisible(pane))
+                uiService.closePane(pane);
+            pane = null;
+        }
+
         if (installer != null) {
             installer.shutdown();
             installer = null;
@@ -215,8 +255,38 @@ public class MapDepot implements IPlugin {
         baseMapView = root.findViewById(R.id.basemap_view);
         mapStatus = root.findViewById(R.id.basemap_status);
         categoryButton = root.findViewById(R.id.category_button);
+        basemapFilter = root.findViewById(R.id.basemap_filter);
+        basemapFilter.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mapShown = nextShown(mapShown);
+                applyCategoryFilter();
+            }
+        });
         status = root.findViewById(R.id.depot_status);
         countryButton = root.findViewById(R.id.country_button);
+        cancelBarDted = root.findViewById(R.id.cancel_bar_dted);
+        cancelBarDted.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (installer != null)
+                    installer.cancel();
+                activeRegionId = null;
+                progressById.clear();
+                cancelBarDted.setVisibility(View.GONE);
+                status.setText("Cancelled.");
+                adapter.notifyDataSetChanged();
+            }
+        });
+
+        regionFilter = root.findViewById(R.id.region_filter);
+        regionFilter.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                regionShown = nextShown(regionShown);
+                applyCountryFilter();
+            }
+        });
 
         adapter = new RegionAdapter(pluginContext);
         final ListView list = root.findViewById(R.id.region_list);
@@ -244,8 +314,45 @@ public class MapDepot implements IPlugin {
         forestView = root.findViewById(R.id.forest_view);
         forestStatus = root.findViewById(R.id.forest_status);
         forestSearch = root.findViewById(R.id.forest_search);
+        cancelBar = root.findViewById(R.id.cancel_bar);
+        cancelBar.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (packages != null)
+                    packages.cancel();
+                activeForestId = null;
+                showCancelBar(false);
+                forestStatus.setText("Cancelled.");
+                packageAdapter.notifyDataSetChanged();
+            }
+        });
+
+        packageFilter = root.findViewById(R.id.package_filter);
+        packageFilter.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                packageShown = nextShown(packageShown);
+                applyForestFilter();
+            }
+        });
         packageAdapter = new PackageAdapter(pluginContext);
-        ((ListView) root.findViewById(R.id.forest_list)).setAdapter(packageAdapter);
+        final ListView packageList = root.findViewById(R.id.forest_list);
+        packageList.setAdapter(packageAdapter);
+
+        // The list owns the row click, not the row. A per-row listener loses the
+        // touch to the Button inside it.
+        packageList.setOnItemClickListener(
+                new android.widget.AdapterView.OnItemClickListener() {
+                    @Override
+                    public void onItemClick(android.widget.AdapterView<?> parent,
+                            View view, int position, long id) {
+                        if (position < 0 || position >= shownPackages.size())
+                            return;
+                        final Depot.Package pkg = shownPackages.get(position);
+                        if (installedPackages.contains(pkg.id()))
+                            PackageInstaller.goTo(pkg);
+                    }
+                });
 
         root.findViewById(R.id.btn_forests).setOnClickListener(
                 new View.OnClickListener() {
@@ -422,8 +529,16 @@ public class MapDepot implements IPlugin {
 
         shown.clear();
         for (Depot.Region r : allRegions)
-            if (code == null || code.equals(r.country))
+            if (code == null || code.equals(r.country)) {
+                final boolean have = r.held() > 0;
+                if (regionShown == Shown.INSTALLED && !have)
+                    continue;
+                if (regionShown == Shown.AVAILABLE && have)
+                    continue;
                 shown.add(r);
+            }
+        if (regionFilter != null)
+            regionFilter.setText(labelFor(regionShown));
         adapter.notifyDataSetChanged();
     }
 
@@ -445,6 +560,8 @@ public class MapDepot implements IPlugin {
                 mv.post(new Runnable() {
                     @Override
                     public void run() {
+                        onDeviceCells.clear();
+                        onDeviceCells.putAll(onDevice);
                         for (Depot.Region r : allRegions)
                             r.measureAgainst(onDevice);
                         if (adapter != null)
@@ -456,7 +573,176 @@ public class MapDepot implements IPlugin {
         }, "mapdepot-dted-scan").start();
     }
 
+    /**
+     * Every cell that some region other than this one is holding.
+     *
+     * Adjacent states share border cells -- that overlap is why the depot stores
+     * cells once rather than per region -- so removing one region must not take
+     * a cell its neighbour still uses. A region only votes if it actually holds
+     * something; otherwise every region in the catalog would vote to keep
+     * everything and nothing could ever be deleted.
+     */
+    private Set<String> cellsNeededElsewhere(Depot.Region removing) {
+        final Set<String> keep = new HashSet<>();
+        for (Depot.Region r : allRegions) {
+            if (r == removing || r.held() <= 0)
+                continue;
+            keep.addAll(r.cells);
+        }
+        return keep;
+    }
+
+    private void confirmAndRemove(final Depot.Region region) {
+        if (activeRegionId != null) {
+            toast("Busy downloading — let it finish first.");
+            return;
+        }
+
+        final Set<String> keep = cellsNeededElsewhere(region);
+
+        // What this actually frees is the cells nobody else is holding, which
+        // for a small state wedged between larger ones can be nothing at all.
+        // Quoting the region's whole size promises something untrue.
+        long freeable = 0L;
+        int shared = 0;
+        for (String key : region.cells) {
+            final Long len = onDeviceCells.get(key);
+            if (len == null)
+                continue;
+            if (keep.contains(key))
+                shared++;
+            else
+                freeable += len;
+        }
+
+        if (freeable == 0L) {
+            new AlertDialog.Builder(hostContext())
+                    .setTitle(region.name + " shares all its elevation")
+                    .setMessage("Elevation comes in one-degree squares, and every"
+                            + " square covering " + region.name + " also covers "
+                            + neighboursHolding(region) + ".\n\nRemoving "
+                            + region.name + " alone frees nothing. To get the"
+                            + " space back you would have to remove those too.")
+                    .setPositiveButton(pluginContext.getString(R.string.ok), null)
+                    .show();
+            return;
+        }
+
+        final String note = shared > 0
+                ? "\n\nCells shared with " + neighboursHolding(region) + " stay."
+                : "";
+
+        new AlertDialog.Builder(hostContext())
+                .setTitle("Remove " + region.name + "?")
+                .setMessage("Frees " + Depot.bytes(freeable) + "." + note)
+                .setNegativeButton(pluginContext.getString(R.string.cancel), null)
+                .setPositiveButton(pluginContext.getString(R.string.remove),
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                removeRegion(region, keep);
+                            }
+                        })
+                .show();
+    }
+
+    /** The regions, named, whose cells overlap this one and are on the device. */
+    private String neighboursHolding(Depot.Region region) {
+        final Set<String> mine = new HashSet<>(region.cells);
+        final List<String> names = new ArrayList<>();
+        for (Depot.Region r : allRegions) {
+            if (r == region || r.held() <= 0)
+                continue;
+            for (String key : r.cells)
+                if (mine.contains(key)) {
+                    names.add(r.name);
+                    break;
+                }
+        }
+        if (names.isEmpty())
+            return "another region";
+        if (names.size() == 1)
+            return names.get(0);
+
+        // Named in full rather than "and 2 more". If the operator wants the
+        // space back they have to remove every one of them, so an abbreviated
+        // list is a list they cannot act on. Only past six does it stop being
+        // a sentence and start being a wall.
+        final int shown = Math.min(names.size(), 6);
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < shown; i++) {
+            if (i > 0)
+                sb.append(i == shown - 1 && shown == names.size()
+                        ? " and " : ", ");
+            sb.append(names.get(i));
+        }
+        if (shown < names.size())
+            sb.append(" and ").append(names.size() - shown).append(" more");
+        return sb.toString();
+    }
+
+    private void removeRegion(final Depot.Region region, final Set<String> keep) {
+        status.setText("Removing " + region.name + "…");
+        activeRegionId = region.id;
+        progressById.put(region.id, 0);
+        adapter.notifyDataSetChanged();
+
+        installer.uninstall(region, keep, new RegionInstaller.Callback() {
+            @Override
+            public void onProgress(int cellsDone, int cellsTotal, long bytesDone,
+                    long bytesTotal, String currentCell) {
+                if (cellsTotal > 0)
+                    progressById.put(region.id, cellsDone * 100 / cellsTotal);
+                adapter.notifyDataSetChanged();
+            }
+
+            @Override
+            public void onSkipped(String key) {
+            }
+
+            @Override
+            public void onRetry(String key, int attempt, long haveBytes) {
+            }
+
+            @Override
+            public void onComplete(int installed, int skipped) {
+                if (cancelBarDted != null)
+                    cancelBarDted.setVisibility(View.GONE);
+            }
+
+            @Override
+            public void onRemoved(int removed, int kept, long freed) {
+                activeRegionId = null;
+                progressById.remove(region.id);
+                completeById.remove(region.id);
+                status.setText(region.name + " removed — " + Depot.bytes(freed)
+                        + " freed" + (kept > 0 ? ", shared cells kept" : "")
+                        + ". ATAK updates coverage within a few seconds.");
+                // Re-read from disk rather than assuming; the scan is the
+                // authority everywhere else on this screen too.
+                measureRegions();
+            }
+
+            @Override
+            public void onError(String message) {
+                Log.w(TAG, region.id + " remove failed: " + message);
+                activeRegionId = null;
+                progressById.remove(region.id);
+                adapter.notifyDataSetChanged();
+                status.setText(region.name + " could not be removed: " + message);
+            }
+        });
+    }
+
     private void loadCatalog() {
+        if (client == null) {
+            // Reachable if a view outlives the instance despite the above.
+            // Saying so beats dying.
+            Log.w(TAG, "loadCatalog with no client; plugin is stopped");
+            if (status != null)
+                status.setText("Map Depot is not running — reload the plugin.");
+            return;
+        }
         status.setText(R.string.loading_catalog);
         client.fetchCatalog(new DepotClient.CatalogCallback() {
             @Override
@@ -558,6 +844,8 @@ public class MapDepot implements IPlugin {
         progressById.put(region.id, 0);
         adapter.notifyDataSetChanged();
 
+        if (cancelBarDted != null)
+            cancelBarDted.setVisibility(View.VISIBLE);
         installer.install(manifest, new RegionInstaller.Callback() {
             @Override
             public void onProgress(int done, int total, long bytesDone,
@@ -598,8 +886,20 @@ public class MapDepot implements IPlugin {
                 activeRegionId = null;
                 progressById.remove(region.id);
                 adapter.notifyDataSetChanged();
+                if (cancelBarDted != null)
+                    cancelBarDted.setVisibility(View.GONE);
+                if (RegionInstaller.CANCELLED.equals(message)) {
+                    status.setText(region.name + " cancelled — what had already "
+                            + "downloaded is kept.");
+                    return;
+                }
                 status.setText(region.name + " failed: " + message);
                 Log.w(TAG, region.id + " install failed: " + message);
+            }
+
+            @Override
+            public void onRemoved(int removed, int kept, long freed) {
+                // Removal has its own callback; this path only installs.
             }
         });
     }
@@ -633,6 +933,8 @@ public class MapDepot implements IPlugin {
      * request -- the client re-reads its cached copy rather than fetching again.
      */
     private void loadBaseMaps() {
+        if (client == null)
+            return;
         client.fetchBaseMaps(new DepotClient.BaseMapCallback() {
             @Override
             public void onBaseMaps(List<Depot.BaseMap> maps) {
@@ -692,13 +994,30 @@ public class MapDepot implements IPlugin {
         if (!categories.isEmpty())
             categoryButton.setText(categories.get(categoryIndex) + "  \u25be");
 
+        basemapFilter.setText(labelFor(mapShown));
+
         shownMaps.clear();
-        for (Depot.BaseMap m : allMaps)
-            if (want == null || want.equals(m.category))
-                shownMaps.add(m);
+        for (Depot.BaseMap m : allMaps) {
+            if (want != null && !want.equals(m.category))
+                continue;
+            final boolean have = installedMaps.contains(m.id);
+            if (mapShown == Shown.INSTALLED && !have)
+                continue;
+            if (mapShown == Shown.AVAILABLE && have)
+                continue;
+            shownMaps.add(m);
+        }
         mapAdapter.notifyDataSetChanged();
-        mapStatus.setText(String.format("%d of %d installed",
-                installedMaps.size(), allMaps.size()));
+
+        if (shownMaps.isEmpty())
+            mapStatus.setText(mapShown == Shown.INSTALLED
+                    ? "None installed here yet."
+                    : mapShown == Shown.AVAILABLE
+                            ? "All of these are installed."
+                            : "Nothing in this category.");
+        else
+            mapStatus.setText(String.format("%d of %d installed",
+                    installedMaps.size(), allMaps.size()));
     }
 
     private void install(final Depot.BaseMap map) {
@@ -747,6 +1066,8 @@ public class MapDepot implements IPlugin {
     // ------------------------------------------------------------ public lands
 
     private void loadForests() {
+        if (client == null)
+            return;
         client.fetchForests(new DepotClient.ForestCallback() {
             @Override
             public void onForests(List<Depot.Forest> fetched,
@@ -782,10 +1103,20 @@ public class MapDepot implements IPlugin {
 
     private void applyForestFilter() {
         final String q = forestSearch.getText().toString().trim().toLowerCase();
+
+        packageFilter.setText(labelFor(packageShown));
+
         shownPackages.clear();
-        for (Depot.Package p : sourceList())
-            if (q.isEmpty() || matches(p, q))
-                shownPackages.add(p);
+        for (Depot.Package p : sourceList()) {
+            if (!q.isEmpty() && !matches(p, q))
+                continue;
+            final boolean have = installedPackages.contains(p.id());
+            if (packageShown == Shown.INSTALLED && !have)
+                continue;
+            if (packageShown == Shown.AVAILABLE && have)
+                continue;
+            shownPackages.add(p);
+        }
         packageAdapter.notifyDataSetChanged();
 
         if (activeForestId == null)
@@ -804,8 +1135,13 @@ public class MapDepot implements IPlugin {
                     ? "No ranger district maps in the catalog yet."
                     : "No packages in the catalog yet.";
 
-        if (shownPackages.isEmpty())
+        if (shownPackages.isEmpty()) {
+            if (packageShown == Shown.INSTALLED)
+                return "None installed yet.";
+            if (packageShown == Shown.AVAILABLE)
+                return "All " + total + " are installed.";
             return "Nothing matches \"" + query + "\" in " + total + ".";
+        }
 
         int held = 0;
         for (Depot.Package p : sourceList())
@@ -833,6 +1169,11 @@ public class MapDepot implements IPlugin {
         return false;
     }
 
+    private void showCancelBar(boolean visible) {
+        if (cancelBar != null)
+            cancelBar.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
     private void installPackage(final Depot.Package pkg) {
         if (activeForestId != null) {
             toast("Already downloading — let it finish first.");
@@ -843,6 +1184,7 @@ public class MapDepot implements IPlugin {
         forestTotal = pkg.bytes();
         forestStatus.setText("Getting " + pkg.name() + " — "
                 + Depot.bytes(pkg.bytes()));
+        showCancelBar(true);
         packageAdapter.notifyDataSetChanged();
         packages.install(pkg, packageCallback());
     }
@@ -866,6 +1208,7 @@ public class MapDepot implements IPlugin {
             @Override
             public void onInstalled(Depot.Package p, java.io.File dest) {
                 activeForestId = null;
+                showCancelBar(false);
                 installedPackages.add(p.id());
                 packageAdapter.notifyDataSetChanged();
                 forestStatus.setText(p.name()
@@ -881,9 +1224,14 @@ public class MapDepot implements IPlugin {
 
             @Override
             public void onError(Depot.Package p, String message) {
-                Log.w(TAG, "package " + p.id() + ": " + message);
                 activeForestId = null;
+                showCancelBar(false);
                 packageAdapter.notifyDataSetChanged();
+                if (PackageInstaller.CANCELLED.equals(message)) {
+                    forestStatus.setText(p.name() + " cancelled — nothing kept.");
+                    return;
+                }
+                Log.w(TAG, "package " + p.id() + ": " + message);
                 forestStatus.setText(p.name() + " failed: " + message);
             }
         };
@@ -932,17 +1280,6 @@ public class MapDepot implements IPlugin {
                 detail.setText(pkg.describe());
             }
 
-            // Tapping the row itself sends the map there, the way tapping an
-            // entry in ATAK's overlay list does. The button keeps its own click,
-            // so Get and Remove are unaffected.
-            row.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    if (done)
-                        PackageInstaller.goTo(pkg);
-                }
-            });
-
             if (active && forestTotal > 0) {
                 bar.setVisibility(View.VISIBLE);
                 bar.setProgress((int) (forestDone * 100L / forestTotal));
@@ -950,24 +1287,30 @@ public class MapDepot implements IPlugin {
                 bar.setVisibility(View.GONE);
             }
 
-            // While one package is downloading the others are not offered: these
-            // run to a gigabyte and two at once on a phone hotspot serves nobody.
-            action.setEnabled(active || activeForestId == null);
-            action.setText(active ? R.string.cancel
-                    : done ? R.string.remove : R.string.get);
+            // The downloading row shows its percentage and nothing else. Cancel
+            // is the bar above the list: a row button moves when the list
+            // reflows and is a poor target, and offering two ways to cancel --
+            // one of which is hard to hit -- is worse than offering one.
+            //
+            // While one package is downloading the others are not offered:
+            // these run to a gigabyte and two at once on a hotspot serves nobody.
+            action.setEnabled(!active && activeForestId == null);
+            if (active) {
+                final int pct = forestTotal > 0
+                        ? (int) (forestDone * 100L / forestTotal) : 0;
+                action.setText(pct + "%");
+            } else {
+                action.setText(done ? R.string.remove : R.string.get);
+            }
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    if (active) {
-                        packages.cancel();
-                        activeForestId = null;
-                        forestStatus.setText("Cancelled.");
-                        packageAdapter.notifyDataSetChanged();
-                    } else if (done) {
+                    if (active)
+                        return;
+                    if (done)
                         uninstallPackage(pkg);
-                    } else {
+                    else
                         installPackage(pkg);
-                    }
                 }
             });
             return row;
@@ -1065,14 +1408,24 @@ public class MapDepot implements IPlugin {
                 // a region installed years ago "Get".
                 final boolean done = region.fullyHeld()
                         || completeById.contains(region.id);
-                action.setEnabled(!done && activeRegionId == null);
-                action.setText(done ? R.string.installed : R.string.get);
+                // A region holding some of its cells reads "Finish", not "Get":
+                // the same word for "you have none of this" and "you have all
+                // but two cells of this" tells the operator nothing.
+                final boolean started = !done && region.held() > 0;
+                action.setEnabled(activeRegionId == null);
+                action.setText(done ? R.string.remove
+                        : started ? R.string.finish : R.string.get);
             }
 
+            final boolean held = region.fullyHeld()
+                    || completeById.contains(region.id);
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    confirmAndInstall(region);
+                    if (held)
+                        confirmAndRemove(region);
+                    else
+                        confirmAndInstall(region);
                 }
             });
             return row;

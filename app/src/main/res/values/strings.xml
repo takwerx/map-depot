@@ -15,8 +15,14 @@
     <string name="loading_catalog">Loading catalog…</string>
     <string name="get">Get</string>
     <string name="cancel">Cancel</string>
+    <string name="cancel_download">Cancel download</string>
+    <string name="ok">OK</string>
     <string name="installed">Installed</string>
     <string name="remove">Remove</string>
+    <string name="finish">Finish</string>
+    <string name="filter_all">All</string>
+    <string name="filter_installed">Installed</string>
+    <string name="filter_available">Available</string>
     <string name="forests_heading">Offline Public Lands</string>
     <string name="search_forests">Search forests…</string>
     <string name="recmaps_heading">Offline Ranger District Maps</string>

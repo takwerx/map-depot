@@ -77,6 +77,15 @@
             <!-- flagNoExtractUi on the imeOptions below: without it Android
                  takes the whole screen with its own text box the moment you tap
                  here, because ATAK runs landscape. Typing happens on the line. -->
+            <Button
+                android:id="@+id/package_filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+
             <EditText
                 android:id="@+id/forest_search"
                 android:layout_width="0dp"
@@ -90,10 +99,25 @@
                 android:singleLine="true" />
         </LinearLayout>
 
+        <!-- Cancel lives here, not in the row. A row button moves when the list
+             scrolls or reflows, changes label mid-download, and is the size of a
+             thumbnail; this is always in the same place and full width. -->
+        <Button
+            android:id="@+id/cancel_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:minHeight="56dp"
+            android:text="@string/cancel_download"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/forest_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minLines="2"
+            android:maxLines="2"
+            android:ellipsize="end"
             android:paddingBottom="4dp"
             android:paddingTop="4dp"
             android:textSize="13sp" />
@@ -126,6 +150,15 @@
                 android:text="@string/back" />
 
             <Button
+                android:id="@+id/basemap_filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+
+            <Button
                 android:id="@+id/category_button"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -137,6 +170,9 @@
             android:id="@+id/basemap_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minLines="2"
+            android:maxLines="2"
+            android:ellipsize="end"
             android:paddingBottom="4dp"
             android:paddingTop="4dp"
             android:textSize="13sp" />
@@ -176,6 +212,15 @@
                  A button plus a chooser dialog on ATAK's own context behaves
                  the same for the operator and cannot do that. -->
             <Button
+                android:id="@+id/region_filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+
+            <Button
                 android:id="@+id/country_button"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -183,10 +228,22 @@
                 android:layout_weight="1" />
         </LinearLayout>
 
+        <Button
+            android:id="@+id/cancel_bar_dted"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:minHeight="56dp"
+            android:text="@string/cancel_download"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/depot_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minLines="2"
+            android:maxLines="2"
+            android:ellipsize="end"
             android:paddingBottom="4dp"
             android:paddingTop="4dp"
             android:text="@string/loading_catalog"

@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- blocksDescendants so the row itself is clickable. A focusable Button inside
+     a list item takes the touch and the list's own item click never fires, which
+     is why tapping a row to go to it did nothing. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:descendantFocusability="blocksDescendants"
     android:orientation="horizontal"
     android:padding="8dp">
 
@@ -38,6 +42,8 @@
         android:id="@+id/region_action"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:focusable="false"
+        android:focusableInTouchMode="false"
         android:layout_gravity="center_vertical"
         android:minWidth="96dp"
         android:text="@string/get" />

@@ -31,14 +31,14 @@ public final class DepotClient {
     public static final String TAG = "MapDepotClient";
 
     /**
-     * Where the depot lives. A preference, not a constant, because moving hosts or
-     * adding a mirror must never require a plugin release -- and the r2.dev address
-     * this ships with is explicitly a development URL.
+     * Where the depot lives. A preference, not a constant, because moving hosts
+     * or adding a mirror must never require a plugin release: once tak.gov signs
+     * a build, whatever is compiled in is the address every device uses.
      */
     public static final String PREF_BASE_URL = "mapdepot.baseUrl";
 
     public static final String DEFAULT_BASE_URL =
-            "https://pub-ddc23f64e5d141c7ac1b16b3fcb7e849.r2.dev";
+            "https://mapdepot.takwerx.org";
 
     private static final String CATALOG = "catalog.json";
 

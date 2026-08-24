@@ -38,6 +38,14 @@ public final class PackageInstaller {
     private static final int CONNECT_TIMEOUT = 30000;
     private static final int READ_TIMEOUT = 60000;
 
+    /**
+     * Raised when the operator cancels. Named so the caller can tell it
+     * apart from a failure: cancelling is something they did, not
+     * something that went wrong, and reporting it as "failed" reads like
+     * the plugin broke.
+     */
+    public static final String CANCELLED = "cancelled";
+
     /** Leave room for the move as well as the download itself. */
     private static final double FREE_SPACE_HEADROOM = 1.15;
 
@@ -156,7 +164,16 @@ public final class PackageInstaller {
         guardInside(staging, part);
         deleteQuietly(part);
 
-        final long written = download(pkg, part, cb);
+        final long written;
+        try {
+            written = download(pkg, part, cb);
+        } catch (Exception failed) {
+            // Cancelling threw and left a part file behind -- 41 MB of a
+            // gigabyte package, invisible to the operator and never resumed,
+            // because this downloader always starts fresh.
+            deleteQuietly(part);
+            throw failed;
+        }
 
         // The declared length is the only integrity check on offer, so hold it.
         if (pkg.bytes() > 0 && written != pkg.bytes()) {
@@ -214,7 +231,7 @@ public final class PackageInstaller {
                 int n;
                 while ((n = in.read(buf)) > 0) {
                     if (cancelled.get())
-                        throw new IllegalStateException("cancelled");
+                        throw new IllegalStateException(CANCELLED);
                     out.write(buf, 0, n);
                     done += n;
 

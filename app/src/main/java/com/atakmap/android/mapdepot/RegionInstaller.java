@@ -16,6 +16,7 @@ import java.security.MessageDigest;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -54,6 +55,14 @@ public final class RegionInstaller {
      * fills a device's storage has not inconvenienced someone, it has taken their
      * map away mid-task.
      */
+    /**
+     * Raised when the operator cancels. Named so the caller can tell it
+     * apart from a failure: cancelling is something they did, not
+     * something that went wrong, and reporting it as "failed" reads like
+     * the plugin broke.
+     */
+    public static final String CANCELLED = "cancelled";
+
     private static final double FREE_SPACE_HEADROOM = 1.15;
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -72,6 +81,12 @@ public final class RegionInstaller {
         void onRetry(String key, int attempt, long haveBytes);
 
         void onComplete(int installed, int skipped);
+
+        /**
+         * A region was removed. {@code kept} is the number of its cells left in
+         * place because a neighbouring region still needs them.
+         */
+        void onRemoved(int removed, int kept, long freed);
 
         void onError(String message);
     }
@@ -149,6 +164,76 @@ public final class RegionInstaller {
                 n++;
         }
         return n;
+    }
+
+    /**
+     * Removes a region's elevation, keeping any cell another held region needs.
+     *
+     * Adjacent regions share border cells -- that overlap is why the depot
+     * stores cells once rather than per region -- so deleting a state's whole
+     * cell list would punch holes in its neighbours. {@code keep} is the union
+     * of every other held region's cells, and anything in it survives.
+     *
+     * ATAK needs no telling: {@code Dt2FileWatcher} rescans on a timer, so
+     * coverage updates by itself within about ten seconds.
+     */
+    public void uninstall(final Depot.Region region, final Set<String> keep,
+            final Callback cb) {
+        worker.execute(new Runnable() {
+            @Override
+            public void run() {
+                final File root = dtedRoot();
+                final int total = region.cells.size();
+                int removed = 0, kept = 0, seen = 0;
+                long freed = 0L;
+
+                for (String key : region.cells) {
+                    seen++;
+                    if (keep.contains(key)) {
+                        kept++;
+                    } else {
+                        final File f = new File(root, key);
+                        if (f.isFile()) {
+                            final long len = f.length();
+                            if (f.delete()) {
+                                removed++;
+                                freed += len;
+                            } else {
+                                Log.w(TAG, "could not delete " + key);
+                            }
+                        }
+                    }
+                    // A state can be a hundred cells; without this the screen
+                    // sits still long enough to look wedged.
+                    postProgress(cb, seen, total, freed, freed, key);
+                }
+
+                // A longitude directory left behind with nothing in it is
+                // clutter, and ATAK logs a complaint about empty DTED dirs.
+                final File[] dirs = root.listFiles();
+                if (dirs != null)
+                    for (File d : dirs) {
+                        final String[] kids = d.isDirectory() ? d.list() : null;
+                        if (kids != null && kids.length == 0 && !d.delete())
+                            Log.w(TAG, "could not remove empty " + d.getName());
+                    }
+
+                Log.d(TAG, "removed " + removed + " cells from " + region.id
+                        + " (" + kept + " kept for neighbours, "
+                        + Depot.bytes(freed) + " freed)");
+                postRemoved(cb, removed, kept, freed);
+            }
+        });
+    }
+
+    private void postRemoved(final Callback cb, final int removed,
+            final int kept, final long freed) {
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                cb.onRemoved(removed, kept, freed);
+            }
+        });
     }
 
     public void install(final Depot.Manifest manifest, final Callback cb) {
@@ -257,7 +342,7 @@ public final class RegionInstaller {
         Exception last = null;
         for (int attempt = 1; attempt <= ATTEMPTS; attempt++) {
             if (cancelled.get())
-                throw new IllegalStateException("cancelled");
+                throw new IllegalStateException(CANCELLED);
             try {
                 downloadCompressed(base + cell.key + ".gz", gz, cell);
 
@@ -395,7 +480,7 @@ public final class RegionInstaller {
                 int n;
                 while ((n = in.read(buf)) > 0) {
                     if (cancelled.get())
-                        throw new IllegalStateException("cancelled");
+                        throw new IllegalStateException(CANCELLED);
                     out.write(buf, 0, n);
                 }
             }
