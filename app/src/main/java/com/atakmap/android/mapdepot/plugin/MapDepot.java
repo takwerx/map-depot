@@ -816,6 +816,12 @@ public class MapDepot implements IPlugin {
                             .append(region.cellCount).append(" of ")
                             .append(region.needCount).append(" cells.");
 
+                // "Reading X..." was put up before the fetch and has to come
+                // back down however this dialog ends -- including a tap outside
+                // it. Left standing it reads as a download stuck on the manifest,
+                // which is what it was mistaken for.
+                final boolean[] started = { false };
+
                 // Strings still come from the plugin's own resources; only the
                 // window comes from the host.
                 new AlertDialog.Builder(hostContext())
@@ -825,10 +831,18 @@ public class MapDepot implements IPlugin {
                                 new DialogInterface.OnClickListener() {
                                     @Override
                                     public void onClick(DialogInterface d, int w) {
+                                        started[0] = true;
                                         start(region, manifest);
                                     }
                                 })
                         .setNegativeButton(pluginContext.getString(R.string.cancel), null)
+                        .setOnDismissListener(new DialogInterface.OnDismissListener() {
+                            @Override
+                            public void onDismiss(DialogInterface d) {
+                                if (!started[0])
+                                    status.setText("");
+                            }
+                        })
                         .show();
             }
 

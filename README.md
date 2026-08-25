@@ -33,14 +33,13 @@ depot once still shows what it holds when there is no signal.
 _________________________________________________________________
 STATUS
 
-Version 0.1. Verified on ATAK-CIV 5.8.0.3.
+Version 0.2. Verified on ATAK-CIV 5.8.0.3.
 
 _________________________________________________________________
 POINT OF CONTACTS
 
 takwerx
-
-Issues and questions: https://github.com/takwerx/map-depot/issues
+https://github.com/takwerx/map-depot/issues
 
 _________________________________________________________________
 PORTS REQUIRED
