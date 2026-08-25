@@ -358,20 +358,20 @@ public class MapDepot implements IPlugin {
                         PackageInstaller.goTo(pkg, new PackageInstaller.GoTo() {
                             @Override
                             public void onGoing(Depot.Package p) {
-                                forestStatus.setText("Going to " + p.name() + ".");
+                                forestStatus.setText("Going to " + p.name());
                             }
 
                             @Override
                             public void onWaiting(Depot.Package p) {
-                                forestStatus.setText(p.name() + " — ATAK is still"
-                                        + " adding it to the map list. It will go"
-                                        + " there as soon as that finishes.");
+                                // Two lines of room, and the name is already
+                                // long. Anything more gets cut off mid-word,
+                                // which reads worse than saying less.
+                                forestStatus.setText("Adding to the map list…");
                             }
 
                             @Override
                             public void onUnavailable(Depot.Package p, String why) {
-                                forestStatus.setText("Could not go to " + p.name()
-                                        + " — " + why + ".");
+                                forestStatus.setText("Could not go there: " + why);
                             }
                         });
                     }

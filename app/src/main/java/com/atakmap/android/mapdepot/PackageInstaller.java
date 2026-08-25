@@ -174,7 +174,7 @@ public final class PackageInstaller {
 
         final long written;
         try {
-            written = download(pkg, part, cb);
+            written = downloadWithRetries(pkg, part, cb);
         } catch (Exception failed) {
             // Cancelling threw and left a part file behind -- 41 MB of a
             // gigabyte package, invisible to the operator and never resumed,
@@ -212,6 +212,69 @@ public final class PackageInstaller {
         return dest;
     }
 
+    /**
+     * Retries a download the host has temporarily refused.
+     *
+     * The forests come from ArcGIS Online, which answers a plain GET with a
+     * redirect to a presigned S3 URL. Pull enough of them in an evening and it
+     * starts replying {@code 204 No Content} instead -- no body, no
+     * explanation, and nothing wrong with the request: the same URL served
+     * from another address at the same moment. Treating that as a hard failure
+     * turned a busy hour into "it just failed", so it is now waited out.
+     *
+     * Only for the codes that mean "not now": a 404 is not going to improve.
+     */
+    private static final int[] BACKOFF_MS = { 5000, 15000, 40000 };
+
+    private long downloadWithRetries(Depot.Package pkg, File part, Callback cb)
+            throws Exception {
+        Exception last = null;
+        for (int attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
+            if (attempt > 0) {
+                final long wait = BACKOFF_MS[attempt - 1];
+                Log.d(TAG, pkg.id() + ": retrying in " + (wait / 1000) + "s");
+                Thread.sleep(wait);
+                if (cancelled.get())
+                    throw new IllegalStateException(CANCELLED);
+            }
+            try {
+                return download(pkg, part, cb);
+            } catch (RetryLater temporary) {
+                deleteQuietly(part);
+                last = temporary;
+            }
+        }
+        throw last;
+    }
+
+    /** A refusal worth waiting out rather than reporting. */
+    private static class RetryLater extends IllegalStateException {
+        RetryLater(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Turns a status code into something worth showing an operator. "HTTP 204"
+     * told them nothing and read like a bug in the plugin.
+     */
+    private static IllegalStateException explain(int code) {
+        switch (code) {
+            case 204:
+            case 429:
+            case 503:
+                return new RetryLater("the map server is busy — waiting");
+            case 403:
+                return new IllegalStateException("the map server refused (403)");
+            case 404:
+                return new IllegalStateException("no longer published (404)");
+            default:
+                return code >= 500
+                        ? new RetryLater("the map server is down (" + code + ")")
+                        : new IllegalStateException("HTTP " + code);
+        }
+    }
+
     private long download(Depot.Package pkg, File part, Callback cb)
             throws Exception {
         final URL u = new URL(pkg.url());
@@ -225,8 +288,11 @@ public final class PackageInstaller {
 
         try {
             final int code = conn.getResponseCode();
-            if (code != HttpURLConnection.HTTP_OK)
-                throw new IllegalStateException("HTTP " + code);
+            if (code != HttpURLConnection.HTTP_OK) {
+                Log.w(TAG, pkg.id() + ": HTTP " + code + " from "
+                        + conn.getURL().getHost());
+                throw new IllegalStateException(explain(code));
+            }
 
             final long total = pkg.bytes() > 0
                     ? pkg.bytes() : conn.getContentLength();
@@ -258,43 +324,27 @@ public final class PackageInstaller {
     }
 
     /**
-     * Selects an installed package in ATAK's layer manager and goes to it.
+     * Goes to an installed package: the same thing tapping it in ATAK's own
+     * Image Overlay list does.
      *
-     * {@code SELECT_LAYER} does the whole job: it finds which adapter holds a
-     * selection by that name -- Mobile for a package, GRG for a district map --
-     * activates that tab, selects the layer and zooms. Naming the tab is not
-     * necessary and would only be a way to get it wrong.
+     * Asks the layer, and nothing else. {@code RasterLayer2.getSelectionOptions}
+     * is answered by querying the layer's data store there and then -- it is
+     * not a cache -- so a layer that offers the name can show it, and the
+     * question needs no scan timing, no refresh, and no broadcast.
      *
-     * The earlier attempt used {@code ZOOM_TO_FILE_ACTION}, which moves the map
-     * but leaves the layer unselected and lands the operator on whichever tab
-     * they were already looking at. Going somewhere without turning the map on
-     * is not what "take me to it" means.
+     * Everything else tried tonight was a way of asking the wrong thing.
+     * {@code SELECT_LAYER} goes through an adapter whose list is rebuilt on a
+     * worker thread with no completion signal.
+     * {@code LocalRasterDataStore.contains} is true from the moment the scan
+     * opens the file. {@code getDatasetNames()} reads the database, which has
+     * the row before the layers are told. And all three ask the *layers*
+     * database, which a GeoPDF never enters: a GRG lives in GRGMapComponent's
+     * own store, so a district map could not be found by any of them.
      *
-     * The selection name is the filename, which is also how ATAK labels these:
-     * {@code CompactCacheDatasetDescriptorSpi} passes {@code file.getName()}
-     * straight through.
-     *
-     * Quiet when nothing is installed -- the operator tapped a row, which is not
-     * worth an error dialog.
-     *
-     * Waits for the scan rather than guessing at it. A package is downloaded,
-     * a layer scan is asked for, and ATAK registers the dataset some time
-     * later -- forty-five seconds for a 318 MB compact cache, measured. Until
-     * that finishes {@code SELECT_LAYER} has nothing to resolve and the tap
-     * silently does nothing, which is what closing and reopening the pane
-     * appeared to "fix": it took long enough that the scan had finished.
-     *
-     * So ask ATAK instead of counting: {@code LocalRasterDataStore.contains}
-     * says whether the dataset is registered yet. Poll it off the UI thread --
-     * the store is synchronised and the running scan holds it -- and select as
-     * soon as it says yes.
-     *
-     * {@code REFRESH_LAYER_MANAGER} is still sent first. Registration is not
-     * quite enough on its own: the adapter that resolves the name hands back a
-     * front buffer rebuilt on its own worker, so the selection is sent twice a
-     * beat apart. Repeats are harmless once one lands -- selecting the layer
-     * that is already selected and zooming to where the map already is changes
-     * nothing.
+     * Both stacks are searched, because the two kinds land in different
+     * places -- a {@code .vtpk} on the mobile raster layer in MAP_LAYERS, a
+     * GRG on "GRG rasters" in RASTER_OVERLAYS -- and both are polled until the
+     * scan or import that is bringing the file in has finished.
      */
     public interface GoTo {
         /** Registered already; the map is moving. */
@@ -318,23 +368,21 @@ public final class PackageInstaller {
             return;
         }
 
+        final boolean overlay = "grg".equals(pkg.destination());
+        final String name = f.getName();
+
         WORKER.execute(new Runnable() {
             @Override
             public void run() {
-                final String name = f.getName();
-                Boolean known = registered(name);
-                Log.d(TAG, "goTo " + name + ": known=" + known);
-                if (known == null || known) {
-                    // Ready as far as the database is concerned -- but the
-                    // refresh inside select() waits on any running scan, so
-                    // say what is happening before blocking on it.
-                    post(cb, pkg, "waiting", null);
-                    select(name);
+                if (selectOnMain(name, overlay)) {
                     post(cb, pkg, "going", null);
                     return;
                 }
 
+                // Not there yet: ATAK is still scanning or importing it.
                 post(cb, pkg, "waiting", null);
+                refreshLayers();
+
                 final long deadline = System.currentTimeMillis() + GOTO_TIMEOUT_MS;
                 while (System.currentTimeMillis() < deadline) {
                     try {
@@ -343,42 +391,41 @@ public final class PackageInstaller {
                         Thread.currentThread().interrupt();
                         return;
                     }
-                    known = registered(name);
-                    if (known == null || known) {
-                        Log.d(TAG, "goTo " + name + ": ready, selecting");
-                        select(name);
+                    if (selectOnMain(name, overlay)) {
                         post(cb, pkg, "going", null);
                         return;
                     }
                 }
-                post(cb, pkg, "unavailable", "ATAK has not finished adding it");
+                post(cb, pkg, "unavailable", "ATAK is still adding it");
             }
         });
     }
 
     /**
-     * Whether ATAK's layer database holds a dataset under this name. Null when
-     * the build exposes no layer database, which is not the same answer as
-     * "no".
-     *
-     * Deliberately not {@code contains(File)}:
-     * {@code LocalRasterDataStore.contains} returns
-     * {@code ingesting.contains(file) || containsImpl(file)}, so it is true
-     * from the moment the scan opens the file and reported ready while the map
-     * went nowhere.
+     * Runs the selection on the UI thread and waits for its answer. MapView
+     * work belongs there, and the caller is a worker, so blocking is safe.
      */
-    private static Boolean registered(String name) {
+    private static boolean selectOnMain(final String name, final boolean overlay) {
+        final java.util.concurrent.atomic.AtomicBoolean done =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        final java.util.concurrent.CountDownLatch latch =
+                new java.util.concurrent.CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    done.set(selectDirect(name, overlay));
+                } finally {
+                    latch.countDown();
+                }
+            }
+        });
         try {
-            final com.atakmap.map.layer.raster.LocalRasterDataStore db =
-                    com.atakmap.android.layers.LayersMapComponent.getLayersDatabase();
-            if (db == null)
-                return null;
-            final java.util.Collection<String> names = db.getDatasetNames();
-            return names != null && names.contains(name);
-        } catch (LinkageError | RuntimeException notThisBuild) {
-            Log.w(TAG, "no layer database to ask: " + notThisBuild);
-            return null;
+            latch.await(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException stop) {
+            Thread.currentThread().interrupt();
         }
+        return done.get();
     }
 
     /**
@@ -433,16 +480,24 @@ public final class PackageInstaller {
      * scanning, or the raster stack may be showing a different card -- and the
      * caller falls back to the broadcast.
      */
-    private static boolean selectDirect(String name) {
+    private static boolean selectDirect(String name, boolean overlay) {
         try {
             final com.atakmap.android.maps.MapView mv =
                     com.atakmap.android.maps.MapView.getMapView();
             if (mv == null)
                 return false;
 
+            // Both stacks that can hold one of these. A .vtpk lands on the
+            // mobile raster layer in MAP_LAYERS; a GeoPDF becomes a GRG, and
+            // GRGMapComponent puts its "GRG rasters" layer in RASTER_OVERLAYS.
+            // Searching only MAP_LAYERS is why a district map never went
+            // anywhere while a forest did.
             final java.util.List<com.atakmap.map.layer.Layer> roots =
-                    mv.getLayers(com.atakmap.android.maps.MapView
-                            .RenderStack.MAP_LAYERS);
+                    new java.util.ArrayList<>();
+            roots.addAll(mv.getLayers(com.atakmap.android.maps.MapView
+                    .RenderStack.MAP_LAYERS));
+            roots.addAll(mv.getLayers(com.atakmap.android.maps.MapView
+                    .RenderStack.RASTER_OVERLAYS));
             final java.util.List<com.atakmap.map.layer.Layer> found =
                     new java.util.ArrayList<>();
             com.atakmap.map.layer.Layers.findLayers(roots,
@@ -470,8 +525,13 @@ public final class PackageInstaller {
             final com.atakmap.map.layer.raster.RasterLayer2 layer =
                     (com.atakmap.map.layer.raster.RasterLayer2) found.get(0);
             layer.setVisible(name, true);
-            layer.setSelection(name);
-            Log.d(TAG, "selected " + name + " on " + layer.getName());
+            // A base map is chosen -- naming it replaces whatever was showing.
+            // An overlay is not: GRGs stack, and several are normally on at
+            // once, so selecting one would amount to turning the others off.
+            if (!overlay)
+                layer.setSelection(name);
+            Log.d(TAG, (overlay ? "showed " : "selected ") + name
+                    + " on " + layer.getName());
 
             zoomTo(mv, layer, name);
             return true;
@@ -495,62 +555,6 @@ public final class PackageInstaller {
                 mv.getWidth(), mv.getHeight());
     }
 
-    /**
-     * Rebuilds the layer list, then names the selection until it sticks.
-     *
-     * The dataset being registered is necessary but not sufficient.
-     * {@code SELECT_LAYER} resolves the name through
-     * {@code LayerSelectionAdapter.findByName}, which reads a front buffer
-     * rebuilt on that adapter's own worker thread; the rebuild reads coverage
-     * geometry for every dataset it holds and is not quick.
-     * {@code REFRESH_LAYER_MANAGER} asks for that rebuild, but nothing says
-     * when it has finished, so the selection is repeated for a while after.
-     *
-     * Repeating is safe. {@code selectLayer} only moves the map when the
-     * layer's resolution is finer than what is already on screen, so once the
-     * first one lands the rest do nothing.
-     *
-     * This is what switching a mobile map by hand was doing: not telling ATAK
-     * anything the plugin cannot, just forcing the same rebuild and taking
-     * long enough that it had finished.
-     */
-    private static final int SELECT_ATTEMPTS = 10;
-    private static final long SELECT_INTERVAL_MS = 1200L;
-
-    private static void select(final String name) {
-        refreshLayers();
-        final Handler main = new Handler(Looper.getMainLooper());
-        main.post(new Runnable() {
-            @Override
-            public void run() {
-                if (selectDirect(name))
-                    return;
-                broadcast(new android.content.Intent(
-                        "com.atakmap.android.maps.REFRESH_LAYER_MANAGER"));
-                for (int n = 0; n < SELECT_ATTEMPTS; n++) {
-                    main.postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            selectNow(name);
-                        }
-                    }, n * SELECT_INTERVAL_MS);
-                }
-            }
-        });
-    }
-
-    private static void selectNow(String name) {
-        // The layer may have finished rebuilding since the last try; prefer it
-        // to the broadcast every time, not just on the first attempt.
-        if (selectDirect(name))
-            return;
-        final android.content.Intent i = new android.content.Intent(
-                "com.atakmap.android.maps.SELECT_LAYER");
-        i.putExtra("selection", name);
-        i.putExtra("zoomTo", true);
-        broadcast(i);
-    }
-
     private static void post(final GoTo cb, final Depot.Package pkg,
             final String what, final String why) {
         if (cb == null)
@@ -566,15 +570,6 @@ public final class PackageInstaller {
                     cb.onUnavailable(pkg, why);
             }
         });
-    }
-
-    /** Broadcasts, or says why it could not on a build that lacks the receiver. */
-    private static void broadcast(android.content.Intent i) {
-        try {
-            com.atakmap.android.ipc.AtakBroadcast.getInstance().sendBroadcast(i);
-        } catch (LinkageError | RuntimeException notThisBuild) {
-            Log.w(TAG, "could not send " + i.getAction() + ": " + notThisBuild);
-        }
     }
 
     /**
