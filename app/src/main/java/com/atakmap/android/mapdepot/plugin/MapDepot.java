@@ -505,6 +505,14 @@ public class MapDepot implements IPlugin {
         forestSearch.setHint(mode == PackageMode.FORESTS
                 ? R.string.search_forests : R.string.search_recmaps);
         forestSearch.setText("");
+
+        // Say it up front rather than after a gigabyte has been downloaded.
+        // ATAK 5.6 has no vector tile package support, so a forest basemap
+        // installs and then exists nowhere ATAK can see it.
+        if (mode == PackageMode.FORESTS
+                && !PackageInstaller.supportsVectorPackages())
+            forestStatus.setText(R.string.forests_need_57);
+
         if (!catalogLoaded)
             loadCatalog();
         else
@@ -1371,7 +1379,12 @@ public class MapDepot implements IPlugin {
             //
             // While one package is downloading the others are not offered:
             // these run to a gigabyte and two at once on a hotspot serves nobody.
-            action.setEnabled(!active && activeForestId == null);
+            // A forest basemap this ATAK cannot display is not worth a
+            // gigabyte. Removing one already downloaded stays available.
+            final boolean unusable = packageMode == PackageMode.FORESTS
+                    && !done && !PackageInstaller.supportsVectorPackages();
+
+            action.setEnabled(!active && activeForestId == null && !unusable);
             if (active) {
                 final int pct = forestTotal > 0
                         ? (int) (forestDone * 100L / forestTotal) : 0;
@@ -1379,6 +1392,8 @@ public class MapDepot implements IPlugin {
             } else {
                 action.setText(done ? R.string.remove : R.string.get);
             }
+            if (unusable)
+                detail.setText(pkg.describe() + " · needs ATAK 5.7 or newer");
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {

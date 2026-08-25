@@ -95,6 +95,35 @@ public final class PackageInstaller {
                 "mapdepot-packages");
     }
 
+    /**
+     * Whether this ATAK can display a vector tile package at all.
+     *
+     * ATAK 5.6 cannot: {@code CompactCacheDatasetDescriptorSpi} and {@code VTPK}
+     * arrived in 5.7. On 5.6 a forest basemap downloads, verifies and installs
+     * perfectly, and then nothing happens -- no dataset, no entry in any layer
+     * list, and "tap to go there" waiting for something that will never appear.
+     * That is what it did to the first person outside this room who tried it.
+     *
+     * Checked by name rather than by referencing the class, because the 5.6
+     * build compiles against a 5.6 SDK where it does not exist.
+     */
+    private static Boolean vtpkSupport;
+
+    public static synchronized boolean supportsVectorPackages() {
+        if (vtpkSupport == null) {
+            boolean ok;
+            try {
+                Class.forName("com.atakmap.map.formats.esri.VTPK");
+                ok = true;
+            } catch (Throwable notThisBuild) {
+                ok = false;
+            }
+            vtpkSupport = ok;
+            Log.i(TAG, "vector tile packages supported: " + ok);
+        }
+        return vtpkSupport;
+    }
+
     public static boolean isInstalled(Depot.Package pkg) {
         return held(pkg) != null;
     }
@@ -261,6 +290,11 @@ public final class PackageInstaller {
     private static IllegalStateException explain(int code) {
         switch (code) {
             case 204:
+                // Not "busy". The Forest Service gateway answers 204 No Content
+                // when it holds nothing for the map and series asked for, so it
+                // means the map is not there -- retrying spent a minute proving
+                // that three times over.
+                return new IllegalStateException("this map is not available");
             case 429:
             case 503:
                 return new RetryLater("the map server is busy — waiting");
@@ -289,9 +323,22 @@ public final class PackageInstaller {
         try {
             final int code = conn.getResponseCode();
             if (code != HttpURLConnection.HTTP_OK) {
-                Log.w(TAG, pkg.id() + ": HTTP " + code + " from "
-                        + conn.getURL().getHost());
-                throw new IllegalStateException(explain(code));
+                // Everything about the response, because a bare code has not
+                // been enough to explain the 204s seen in the field: the same
+                // URL serves 200 with the right length from a desktop JVM.
+                Log.w(TAG, pkg.id() + ": HTTP " + code + " " + conn.getResponseMessage()
+                        + " from " + conn.getURL()
+                        + " (type=" + conn.getContentType()
+                        + " length=" + conn.getContentLength()
+                        + " server=" + conn.getHeaderField("server")
+                        + " via=" + conn.getHeaderField("via") + ")");
+                // `throw new IllegalStateException(explain(code))` would hit the
+                // Throwable-cause constructor: the message becomes the cause's
+                // toString(), which is how a class name reached the operator's
+                // screen, and the thrown object stops being a RetryLater -- so
+                // downloadWithRetries never caught it and the retries this was
+                // all written for never ran once.
+                throw explain(code);
             }
 
             final long total = pkg.bytes() > 0
