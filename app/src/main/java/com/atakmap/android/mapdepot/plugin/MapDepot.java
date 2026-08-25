@@ -349,8 +349,31 @@ public class MapDepot implements IPlugin {
                         if (position < 0 || position >= shownPackages.size())
                             return;
                         final Depot.Package pkg = shownPackages.get(position);
-                        if (installedPackages.contains(pkg.id()))
-                            PackageInstaller.goTo(pkg);
+                        if (!installedPackages.contains(pkg.id()))
+                            return;
+                        // A freshly downloaded package is not in ATAK's map
+                        // list the instant the download ends -- the scan takes
+                        // as long as it takes. Say so rather than letting the
+                        // tap look broken.
+                        PackageInstaller.goTo(pkg, new PackageInstaller.GoTo() {
+                            @Override
+                            public void onGoing(Depot.Package p) {
+                                forestStatus.setText("Going to " + p.name() + ".");
+                            }
+
+                            @Override
+                            public void onWaiting(Depot.Package p) {
+                                forestStatus.setText(p.name() + " — ATAK is still"
+                                        + " adding it to the map list. It will go"
+                                        + " there as soon as that finishes.");
+                            }
+
+                            @Override
+                            public void onUnavailable(Depot.Package p, String why) {
+                                forestStatus.setText("Could not go to " + p.name()
+                                        + " — " + why + ".");
+                            }
+                        });
                     }
                 });
 

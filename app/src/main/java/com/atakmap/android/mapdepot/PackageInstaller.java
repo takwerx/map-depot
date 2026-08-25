@@ -50,6 +50,14 @@ public final class PackageInstaller {
     private static final double FREE_SPACE_HEADROOM = 1.15;
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+
+    /**
+     * Shared by goTo, which is static because a row tap is not tied to any
+     * one download. One thread is enough: only one row can be tapped at a
+     * time, and a second tap should replace the wait, not race it.
+     */
+    private static final ExecutorService WORKER =
+            Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
 
@@ -268,19 +276,304 @@ public final class PackageInstaller {
      *
      * Quiet when nothing is installed -- the operator tapped a row, which is not
      * worth an error dialog.
+     *
+     * Waits for the scan rather than guessing at it. A package is downloaded,
+     * a layer scan is asked for, and ATAK registers the dataset some time
+     * later -- forty-five seconds for a 318 MB compact cache, measured. Until
+     * that finishes {@code SELECT_LAYER} has nothing to resolve and the tap
+     * silently does nothing, which is what closing and reopening the pane
+     * appeared to "fix": it took long enough that the scan had finished.
+     *
+     * So ask ATAK instead of counting: {@code LocalRasterDataStore.contains}
+     * says whether the dataset is registered yet. Poll it off the UI thread --
+     * the store is synchronised and the running scan holds it -- and select as
+     * soon as it says yes.
+     *
+     * {@code REFRESH_LAYER_MANAGER} is still sent first. Registration is not
+     * quite enough on its own: the adapter that resolves the name hands back a
+     * front buffer rebuilt on its own worker, so the selection is sent twice a
+     * beat apart. Repeats are harmless once one lands -- selecting the layer
+     * that is already selected and zooming to where the map already is changes
+     * nothing.
      */
-    public static void goTo(Depot.Package pkg) {
+    public interface GoTo {
+        /** Registered already; the map is moving. */
+        void onGoing(Depot.Package pkg);
+
+        /** Not registered yet -- ATAK is still scanning it in. */
+        void onWaiting(Depot.Package pkg);
+
+        /** Gave up, or this build has no layer database to ask. */
+        void onUnavailable(Depot.Package pkg, String why);
+    }
+
+    /** How long to wait for a scan before admitting it is not coming. */
+    private static final long GOTO_TIMEOUT_MS = 180000L;
+    private static final long GOTO_POLL_MS = 1000L;
+
+    public static void goTo(final Depot.Package pkg, final GoTo cb) {
         final File f = held(pkg);
-        if (f == null)
+        if (f == null) {
+            post(cb, pkg, "unavailable", "it is not installed");
             return;
+        }
+
+        WORKER.execute(new Runnable() {
+            @Override
+            public void run() {
+                final String name = f.getName();
+                Boolean known = registered(name);
+                Log.d(TAG, "goTo " + name + ": known=" + known);
+                if (known == null || known) {
+                    // Ready as far as the database is concerned -- but the
+                    // refresh inside select() waits on any running scan, so
+                    // say what is happening before blocking on it.
+                    post(cb, pkg, "waiting", null);
+                    select(name);
+                    post(cb, pkg, "going", null);
+                    return;
+                }
+
+                post(cb, pkg, "waiting", null);
+                final long deadline = System.currentTimeMillis() + GOTO_TIMEOUT_MS;
+                while (System.currentTimeMillis() < deadline) {
+                    try {
+                        Thread.sleep(GOTO_POLL_MS);
+                    } catch (InterruptedException stop) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    known = registered(name);
+                    if (known == null || known) {
+                        Log.d(TAG, "goTo " + name + ": ready, selecting");
+                        select(name);
+                        post(cb, pkg, "going", null);
+                        return;
+                    }
+                }
+                post(cb, pkg, "unavailable", "ATAK has not finished adding it");
+            }
+        });
+    }
+
+    /**
+     * Whether ATAK's layer database holds a dataset under this name. Null when
+     * the build exposes no layer database, which is not the same answer as
+     * "no".
+     *
+     * Deliberately not {@code contains(File)}:
+     * {@code LocalRasterDataStore.contains} returns
+     * {@code ingesting.contains(file) || containsImpl(file)}, so it is true
+     * from the moment the scan opens the file and reported ready while the map
+     * went nowhere.
+     */
+    private static Boolean registered(String name) {
         try {
-            final android.content.Intent i = new android.content.Intent(
-                    "com.atakmap.android.maps.SELECT_LAYER");
-            i.putExtra("selection", f.getName());
-            i.putExtra("zoomTo", true);
+            final com.atakmap.map.layer.raster.LocalRasterDataStore db =
+                    com.atakmap.android.layers.LayersMapComponent.getLayersDatabase();
+            if (db == null)
+                return null;
+            final java.util.Collection<String> names = db.getDatasetNames();
+            return names != null && names.contains(name);
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "no layer database to ask: " + notThisBuild);
+            return null;
+        }
+    }
+
+    /**
+     * Makes ATAK's raster layers pick up what the scan has added.
+     *
+     * This is the step that was missing, and the reason a freshly downloaded
+     * package could be in the layer database and still not selectable. The
+     * scan writes the dataset row, but the layers hold their own cached view
+     * and only rebuild it when the store announces a change -- and the one
+     * announcement a scan makes comes from the {@code refresh()} at its
+     * *start*, before the new dataset exists. Nothing announces the end.
+     *
+     * {@code PersistentRasterDataStore.refresh()} clears those cached layer
+     * references and dispatches the change itself, which is what switching a
+     * map by hand ended up causing. It is {@code synchronized} and the running
+     * scan holds the lock, so calling it also waits for that scan to finish --
+     * which is why this must never run on the UI thread.
+     */
+    private static void refreshLayers() {
+        try {
+            final com.atakmap.map.layer.raster.LocalRasterDataStore db =
+                    com.atakmap.android.layers.LayersMapComponent.getLayersDatabase();
+            if (db != null)
+                db.refresh();
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "could not refresh the layer store: " + notThisBuild);
+        }
+    }
+
+    /**
+     * Selects the package on ATAK's raster layer directly, without the
+     * broadcast.
+     *
+     * The broadcast route asks {@code LayersManagerBroadcastReceiver} to
+     * resolve a name through a {@code LayerSelectionAdapter}, whose list is a
+     * front buffer rebuilt on its own worker thread. Nothing says when that
+     * rebuild has happened, so every attempt to use it amounted to guessing at
+     * a delay -- and the guesses were wrong, in both directions, for hours.
+     *
+     * The layer underneath has no such buffer. {@code Layers.findLayers} walks
+     * the map's layer tree, {@code RasterLayer2.getSelectionOptions} says what
+     * that layer can actually show right now, and {@code setSelection} names
+     * it. If the layer offers the name, the selection cannot fail to take.
+     *
+     * A {@code .vtpk} registers as {@code compactcache}, which
+     * {@code CompactCacheDatasetDescriptorSpi} hands to
+     * {@code MobileImageryRasterLayer2}; that layer names its selections from
+     * imagery types, and the imagery type of one of these is the file name.
+     * So the name asked for here is the name the layer knows it by.
+     *
+     * Returns false when no layer offers the name -- ATAK may still be
+     * scanning, or the raster stack may be showing a different card -- and the
+     * caller falls back to the broadcast.
+     */
+    private static boolean selectDirect(String name) {
+        try {
+            final com.atakmap.android.maps.MapView mv =
+                    com.atakmap.android.maps.MapView.getMapView();
+            if (mv == null)
+                return false;
+
+            final java.util.List<com.atakmap.map.layer.Layer> roots =
+                    mv.getLayers(com.atakmap.android.maps.MapView
+                            .RenderStack.MAP_LAYERS);
+            final java.util.List<com.atakmap.map.layer.Layer> found =
+                    new java.util.ArrayList<>();
+            com.atakmap.map.layer.Layers.findLayers(roots,
+                    new com.atakmap.map.layer.LayerFilter() {
+                        @Override
+                        public boolean accept(com.atakmap.map.layer.Layer l) {
+                            if (!(l instanceof com.atakmap.map.layer.raster.RasterLayer2))
+                                return false;
+                            final java.util.Collection<String> opts =
+                                    ((com.atakmap.map.layer.raster.RasterLayer2) l)
+                                            .getSelectionOptions();
+                            final boolean hit = opts != null && opts.contains(name);
+                            Log.d(TAG, "layer " + l.getName() + " offers "
+                                    + (opts == null ? -1 : opts.size())
+                                    + " selections, has ours: " + hit);
+                            return hit;
+                        }
+                    }, found, 1);
+
+            if (found.isEmpty()) {
+                Log.d(TAG, "no layer offers " + name + " yet");
+                return false;
+            }
+
+            final com.atakmap.map.layer.raster.RasterLayer2 layer =
+                    (com.atakmap.map.layer.raster.RasterLayer2) found.get(0);
+            layer.setVisible(name, true);
+            layer.setSelection(name);
+            Log.d(TAG, "selected " + name + " on " + layer.getName());
+
+            zoomTo(mv, layer, name);
+            return true;
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "could not select directly: " + notThisBuild);
+            return false;
+        }
+    }
+
+    /** Fits the map to the selection's own coverage. */
+    private static void zoomTo(com.atakmap.android.maps.MapView mv,
+            com.atakmap.map.layer.raster.RasterLayer2 layer, String name) {
+        final com.atakmap.map.layer.feature.geometry.Geometry g =
+                layer.getGeometry(name);
+        if (g == null)
+            return;
+        final com.atakmap.map.layer.feature.geometry.Envelope e = g.getEnvelope();
+        com.atakmap.android.util.ATAKUtilities.scaleToFit(mv,
+                new com.atakmap.coremap.maps.coords.GeoBounds(
+                        e.minY, e.minX, e.maxY, e.maxX),
+                mv.getWidth(), mv.getHeight());
+    }
+
+    /**
+     * Rebuilds the layer list, then names the selection until it sticks.
+     *
+     * The dataset being registered is necessary but not sufficient.
+     * {@code SELECT_LAYER} resolves the name through
+     * {@code LayerSelectionAdapter.findByName}, which reads a front buffer
+     * rebuilt on that adapter's own worker thread; the rebuild reads coverage
+     * geometry for every dataset it holds and is not quick.
+     * {@code REFRESH_LAYER_MANAGER} asks for that rebuild, but nothing says
+     * when it has finished, so the selection is repeated for a while after.
+     *
+     * Repeating is safe. {@code selectLayer} only moves the map when the
+     * layer's resolution is finer than what is already on screen, so once the
+     * first one lands the rest do nothing.
+     *
+     * This is what switching a mobile map by hand was doing: not telling ATAK
+     * anything the plugin cannot, just forcing the same rebuild and taking
+     * long enough that it had finished.
+     */
+    private static final int SELECT_ATTEMPTS = 10;
+    private static final long SELECT_INTERVAL_MS = 1200L;
+
+    private static void select(final String name) {
+        refreshLayers();
+        final Handler main = new Handler(Looper.getMainLooper());
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                if (selectDirect(name))
+                    return;
+                broadcast(new android.content.Intent(
+                        "com.atakmap.android.maps.REFRESH_LAYER_MANAGER"));
+                for (int n = 0; n < SELECT_ATTEMPTS; n++) {
+                    main.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            selectNow(name);
+                        }
+                    }, n * SELECT_INTERVAL_MS);
+                }
+            }
+        });
+    }
+
+    private static void selectNow(String name) {
+        // The layer may have finished rebuilding since the last try; prefer it
+        // to the broadcast every time, not just on the first attempt.
+        if (selectDirect(name))
+            return;
+        final android.content.Intent i = new android.content.Intent(
+                "com.atakmap.android.maps.SELECT_LAYER");
+        i.putExtra("selection", name);
+        i.putExtra("zoomTo", true);
+        broadcast(i);
+    }
+
+    private static void post(final GoTo cb, final Depot.Package pkg,
+            final String what, final String why) {
+        if (cb == null)
+            return;
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                if ("going".equals(what))
+                    cb.onGoing(pkg);
+                else if ("waiting".equals(what))
+                    cb.onWaiting(pkg);
+                else
+                    cb.onUnavailable(pkg, why);
+            }
+        });
+    }
+
+    /** Broadcasts, or says why it could not on a build that lacks the receiver. */
+    private static void broadcast(android.content.Intent i) {
+        try {
             com.atakmap.android.ipc.AtakBroadcast.getInstance().sendBroadcast(i);
         } catch (LinkageError | RuntimeException notThisBuild) {
-            Log.w(TAG, "could not select " + f.getName() + ": " + notThisBuild);
+            Log.w(TAG, "could not send " + i.getAction() + ": " + notThisBuild);
         }
     }
 
