@@ -33,7 +33,7 @@ depot once still shows what it holds when there is no signal.
 _________________________________________________________________
 STATUS
 
-Version 0.3. Verified on ATAK-CIV 5.8.0.3.
+Version 0.4. Verified on ATAK-CIV 5.8.0.3.
 
 _________________________________________________________________
 POINT OF CONTACTS
