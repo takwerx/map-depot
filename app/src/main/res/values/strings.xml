@@ -32,4 +32,7 @@
     <string name="all_categories">All categories</string>
     <string name="choose_country">Country</string>
     <string name="catalog_offline">Showing the last catalog — no connection to the depot.</string>
+    <string name="prefs_summary">Open the Map Depot user guide</string>
+    <string name="manual_title">Plugin Documentation</string>
+    <string name="manual_summary">Open the Map Depot user guide: what each section downloads, how to find what you already have, and where files land</string>
 </resources>

@@ -5,12 +5,21 @@
     android:orientation="vertical"
     android:padding="8dp">
 
-    <!-- Landing: pick what kind of data you are after. Three kinds today; the
-         layout is a list of choices so a fourth does not need a redesign. -->
-    <LinearLayout
+    <!-- Landing: pick what kind of data you are after. Four kinds today, and
+         the list scrolls, because it already did not fit: on an XCover Pro the
+         fourth button was cut in half with nothing to scroll, and on ATAK 5.7
+         it was clipped further still. A fixed column of choices silently loses
+         the last one on a short pane, and would lose two when a fifth is
+         added. fillViewport keeps it looking the same when there is room. -->
+    <ScrollView
         android:id="@+id/home_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:orientation="vertical">
 
         <Button
@@ -51,6 +60,7 @@
             android:paddingTop="10dp"
             android:textSize="12sp" />
     </LinearLayout>
+    </ScrollView>
 
     <!-- Public lands: 148 units is far too many for a chooser dialog, so this
          one filters as you type. Search rather than a picker also matches how

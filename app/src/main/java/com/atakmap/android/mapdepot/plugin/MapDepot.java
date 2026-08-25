@@ -60,6 +60,9 @@ public class MapDepot implements IPlugin {
 
     private static final String TAG = "MapDepot";
 
+    /** Identifies this plugin's entry in ATAK's Tool Preferences list. */
+    private static final String PREFS_KEY = "mapdepot_preferences";
+
     private final IServiceController serviceController;
     private Context pluginContext;
     private IHostUIService uiService;
@@ -200,10 +203,47 @@ public class MapDepot implements IPlugin {
         baseMaps = new BaseMapInstaller();
         packages = new PackageInstaller();
         uiService.addToolbarItem(toolbarItem);
+        registerPreferences();
+    }
+
+    /**
+     * Puts Map Depot in ATAK's Tool Preferences, which is the only route to the
+     * user manual. The PDF is built into the plugin's assets, and an asset is
+     * not reachable by anyone -- without this entry it shipped inside the APK
+     * with no way to open it.
+     *
+     * Guarded rather than assumed: a build that does not expose
+     * {@code ToolsPreferenceFragment} should lose the manual, not the plugin.
+     */
+    private void registerPreferences() {
+        try {
+            com.atakmap.app.preferences.ToolsPreferenceFragment.register(
+                    new com.atakmap.app.preferences.ToolsPreferenceFragment
+                            .ToolPreference(
+                            pluginContext.getString(R.string.app_name),
+                            pluginContext.getString(R.string.prefs_summary),
+                            PREFS_KEY,
+                            pluginContext.getResources().getDrawable(
+                                    R.drawable.ic_launcher),
+                            new MapDepotPreferenceFragment(pluginContext)));
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "could not register preferences: " + notThisBuild);
+        }
+    }
+
+    private void unregisterPreferences() {
+        try {
+            com.atakmap.app.preferences.ToolsPreferenceFragment
+                    .unregister(PREFS_KEY);
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "could not unregister preferences: " + notThisBuild);
+        }
     }
 
     @Override
     public void onStop() {
+        unregisterPreferences();
+
         // Close the pane and let go of it. Its buttons hold a reference to this
         // instance, and everything this instance owns is about to be null, so a
         // pane left on screen after an unload is a tap away from taking ATAK
