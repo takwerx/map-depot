@@ -1,12 +1,12 @@
 # Map Depot for ATAK — User Guide
 
-**Version 0.5 · takwerx**
+**Version 0.6 · takwerx**
 
-**Download Map Depot 0.5** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
+**Download Map Depot 0.6** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
 
-- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v0.5/ATAK-Plugin-MapDepot-0.5--5.6.0-civ-release.apk
-- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v0.5/ATAK-Plugin-MapDepot-0.5--5.7.0-civ-release.apk
-- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v0.5/ATAK-Plugin-MapDepot-0.5--5.8.0-civ-release.apk
+- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v0.6/ATAK-Plugin-MapDepot-0.6--5.6.0-civ-release.apk
+- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v0.6/ATAK-Plugin-MapDepot-0.6--5.7.0-civ-release.apk
+- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v0.6/ATAK-Plugin-MapDepot-0.6--5.8.0-civ-release.apk
 
 All releases: https://github.com/takwerx/map-depot/releases
 
@@ -27,6 +27,12 @@ like a version problem.
 
 Map Depot needs outbound HTTPS (port 443) and nothing else. No account, no key,
 no configuration, and no TAK server involvement.
+
+**On ATAK 5.6, Offline Public Lands does not work.** Vector tile package support
+arrived in ATAK 5.7, so on 5.6 a forest basemap would download and then be
+invisible to ATAK. Map Depot marks those maps as needing 5.7 or newer rather
+than letting you spend a gigabyte on one. Elevation, streaming base maps and
+ranger district maps all work normally on 5.6.
 
 ---
 
@@ -130,6 +136,8 @@ A Forest Service vector basemap for each national forest and grassland — roads
 trails, boundaries, contours and labels — held on the device and drawn with no
 network at all. These are large: tens of megabytes for a grassland, over a
 gigabyte for the biggest forests.
+
+**Needs ATAK 5.7 or newer.** On 5.6 these rows are disabled and say so.
 
 Type part of a forest's name to narrow the list.
 
