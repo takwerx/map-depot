@@ -428,7 +428,10 @@ public final class PackageInstaller {
 
                 // Not there yet: ATAK is still scanning or importing it.
                 post(cb, pkg, "waiting", null);
+                Log.d(TAG, "waiting for ATAK to register " + name
+                        + " (up to " + (GOTO_TIMEOUT_MS / 1000) + "s)");
                 refreshLayers();
+                polling = true;
 
                 final long deadline = System.currentTimeMillis() + GOTO_TIMEOUT_MS;
                 while (System.currentTimeMillis() < deadline) {
@@ -439,11 +442,14 @@ public final class PackageInstaller {
                         return;
                     }
                     if (selectOnMain(name, overlay)) {
+                        polling = false;
                         post(cb, pkg, "going", null);
                         return;
                     }
                 }
-                post(cb, pkg, "unavailable", "ATAK is still adding it");
+                polling = false;
+                Log.w(TAG, "gave up waiting for ATAK to register " + name);
+                post(cb, pkg, "unavailable", "ATAK never added it");
             }
         });
     }
@@ -527,6 +533,9 @@ public final class PackageInstaller {
      * scanning, or the raster stack may be showing a different card -- and the
      * caller falls back to the broadcast.
      */
+    /** True while the caller is polling, so the per-layer log stays quiet. */
+    private static volatile boolean polling = false;
+
     private static boolean selectDirect(String name, boolean overlay) {
         try {
             final com.atakmap.android.maps.MapView mv =
@@ -557,15 +566,22 @@ public final class PackageInstaller {
                                     ((com.atakmap.map.layer.raster.RasterLayer2) l)
                                             .getSelectionOptions();
                             final boolean hit = opts != null && opts.contains(name);
-                            Log.d(TAG, "layer " + l.getName() + " offers "
-                                    + (opts == null ? -1 : opts.size())
-                                    + " selections, has ours: " + hit);
+                            // Once, or when it succeeds. This runs once a second
+                            // for as long as the wait lasts, and on a build that
+                            // can never register the file it produced 3,534 lines
+                            // in one session -- enough to bury everything else in
+                            // a log someone was trying to read.
+                            if (hit || !polling)
+                                Log.d(TAG, "layer " + l.getName() + " offers "
+                                        + (opts == null ? -1 : opts.size())
+                                        + " selections, has ours: " + hit);
                             return hit;
                         }
                     }, found, 1);
 
             if (found.isEmpty()) {
-                Log.d(TAG, "no layer offers " + name + " yet");
+                if (!polling)
+                    Log.d(TAG, "no layer offers " + name + " yet");
                 return false;
             }
 

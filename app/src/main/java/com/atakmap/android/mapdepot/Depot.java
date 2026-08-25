@@ -38,7 +38,13 @@ public final class Depot {
      * ampersand or equals here would append a parameter of someone else's
      * choosing.
      */
-    private static final Pattern MAP_ID = Pattern.compile("[A-Za-z0-9 .'-]{1,120}");
+    // Commas are in here because forests have them: "Grand Mesa, Uncompahgre and
+    // Gunnison National Forests" was rejected on every catalog load and was
+    // therefore invisible and undownloadable, while the Forest Service serves it
+    // perfectly well. The value is URL-encoded before it reaches a query string,
+    // so a comma cannot separate a parameter; the pattern is defence in depth,
+    // not the escaping.
+    private static final Pattern MAP_ID = Pattern.compile("[A-Za-z0-9 .,'-]{1,120}");
 
     /**
      * A region id becomes part of a filename in the cache directory, so it is
