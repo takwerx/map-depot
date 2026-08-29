@@ -23,6 +23,7 @@
         android:orientation="vertical">
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/btn_dted"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -31,6 +32,7 @@
             android:text="@string/elevation_heading" />
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/btn_maps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -39,6 +41,7 @@
             android:text="@string/maps_heading" />
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/btn_forests"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -47,6 +50,7 @@
             android:text="@string/forests_heading" />
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/btn_recmaps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -79,6 +83,7 @@
             android:orientation="horizontal">
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/btn_back_forests"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -88,6 +93,7 @@
                  takes the whole screen with its own text box the moment you tap
                  here, because ATAK runs landscape. Typing happens on the line. -->
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/package_filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -113,6 +119,7 @@
              scrolls or reflows, changes label mid-download, and is the size of a
              thumbnail; this is always in the same place and full width. -->
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/cancel_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -154,12 +161,14 @@
             android:orientation="horizontal">
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/btn_back_maps"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/back" />
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/basemap_filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -169,6 +178,7 @@
                 android:paddingEnd="10dp" />
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/category_button"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -211,6 +221,7 @@
             android:orientation="horizontal">
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/btn_back"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -222,6 +233,7 @@
                  A button plus a chooser dialog on ATAK's own context behaves
                  the same for the operator and cannot do that. -->
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/region_filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -231,6 +243,7 @@
                 android:paddingEnd="10dp" />
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/country_button"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -239,6 +252,7 @@
         </LinearLayout>
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/cancel_bar_dted"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
