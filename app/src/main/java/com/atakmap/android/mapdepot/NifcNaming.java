@@ -97,11 +97,23 @@ public final class NifcNaming {
     private static final Pattern YEAR = Pattern.compile("^20\\d{2}$");
 
     /**
-     * A dispatch/unit identifier such as {@code ORPRD000491}: two letters of
-     * state, three of unit, then the incident number. Split to {@code OR-PRD}.
+     * A dispatch/unit identifier such as {@code ORPRD000491} or
+     * {@code OR953S000587}: a state and unit code, then the incident number.
+     * The incident number is dropped and the code kept, so the name says which
+     * outfit's map it is without carrying a dispatch serial an operator will
+     * never read.
+     *
+     * Deliberately looser than "two letters then three": the unit code is not
+     * always three letters and is not always letters. Six real variants in the
+     * sample -- {@code OR953S000587}, {@code DFFP611234}, {@code PRD000497},
+     * {@code SUF002394}, {@code HIA000583}, {@code YAA000090} -- were missed by
+     * the stricter rule and leaked the whole raw identifier into the name.
+     *
+     * So the trailing run of digits is the incident number and what precedes it
+     * is the code, split by {@link #claimIdentifier}.
      */
     private static final Pattern UNIT_ID = Pattern
-            .compile("^([A-Za-z]{2})([A-Za-z]{3})(\\d{5,7})$");
+            .compile("^([A-Za-z][A-Za-z0-9]*?)(\\d{5,7})$");
 
     /** {@code 0115}, the plot time. */
     private static final Pattern TIME = Pattern.compile("^\\d{3,4}$");
@@ -358,8 +370,18 @@ public final class NifcNaming {
     private static boolean claimIdentifier(Parts p, String raw, String year) {
         final Matcher u = UNIT_ID.matcher(raw);
         if (u.matches()) {
-            p.state = u.group(1).toUpperCase(Locale.US);
-            p.unit = u.group(2).toUpperCase(Locale.US);
+            final String code = u.group(1).toUpperCase(Locale.US);
+            // Five or more means state and unit are both in there
+            // (ORPRD -> OR + PRD, OR953S -> OR + 953S). Shorter is a unit on
+            // its own, which some GACCs post without a state at all.
+            if (code.length() >= 5) {
+                p.state = code.substring(0, 2);
+                p.unit = code.substring(2);
+            } else if (code.length() >= 3) {
+                p.unit = code;
+            } else {
+                p.state = code;
+            }
             return true;
         }
         final Matcher op = OP_PERIOD.matcher(raw);
