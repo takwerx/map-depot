@@ -36,4 +36,8 @@
     <string name="manual_title">Plugin Documentation</string>
     <string name="manual_summary">Open the Map Depot user guide: what each section downloads, how to find what you already have, and where files land</string>
     <string name="forests_need_57">These need ATAK 5.7 or newer. This version cannot display them.</string>
+    <string name="nifc_heading">Incident Maps (NIFC)</string>
+    <string name="nifc_pick_gacc">Pick your area</string>
+    <string name="nifc_loading">Loading…</string>
+    <string name="nifc_empty">Nothing posted here</string>
 </resources>

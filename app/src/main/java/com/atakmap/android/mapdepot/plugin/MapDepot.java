@@ -25,13 +25,16 @@ import com.atakmap.android.maps.MapView;
 import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
+import com.atakmap.android.mapdepot.NifcClient;
 import com.atakmap.android.mapdepot.PackageInstaller;
 import com.atakmap.android.mapdepot.RegionInstaller;
 import com.atakmap.coremap.log.Log;
 
 import java.io.File;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -164,6 +167,35 @@ public class MapDepot implements IPlugin {
     private TextView mapStatus;
     private Button categoryButton;
     private final Set<String> installedMaps = new HashSet<>();
+
+    // ------------------------------------------------------------------ NIFC
+    //
+    // A directory browser rather than a fixed set of screens, because the eleven
+    // GACCs do not agree on a layout and any wizard modelled on one of them is
+    // wrong for the others. The stack is what Back walks up; the GACC is the
+    // floor it stops at, so Back leaves the browser rather than stranding the
+    // operator at the top of the whole server.
+    private NifcClient nifc;
+    private View nifcView;
+    private ListView nifcList;
+    private TextView nifcStatus;
+    private Button nifcGaccButton, cancelBarNifc;
+    private NifcAdapter nifcAdapter;
+
+    private final List<Object> nifcRows = new ArrayList<>();
+    private final Deque<String[]> nifcStack = new ArrayDeque<>();
+    private final List<String> gaccPaths = new ArrayList<>();
+    private final List<String> gaccLabels = new ArrayList<>();
+
+    /** Encoded path for building URLs; decoded path for naming downloads. */
+    private String nifcPath = "";
+    private String nifcDecodedPath = "";
+
+    private String activePostingId;
+    private final Set<String> nifcInstalled = new HashSet<>();
+
+    /** Survives a plugin reload only on the host context -- see loadGacc(). */
+    private static final String PREF_GACC = "mapdepot_nifc_gacc";
 
     public MapDepot(IServiceController serviceController) {
         this.serviceController = serviceController;
@@ -433,6 +465,46 @@ public class MapDepot implements IPlugin {
                     }
                 });
 
+        nifcView = root.findViewById(R.id.nifc_view);
+        nifcList = root.findViewById(R.id.nifc_list);
+        nifcStatus = root.findViewById(R.id.nifc_status);
+        nifcGaccButton = root.findViewById(R.id.nifc_gacc);
+        cancelBarNifc = root.findViewById(R.id.cancel_bar_nifc);
+        nifcAdapter = new NifcAdapter(pluginContext);
+        nifcList.setAdapter(nifcAdapter);
+
+        root.findViewById(R.id.btn_nifc).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        showNifc();
+                    }
+                });
+
+        root.findViewById(R.id.btn_back_nifc).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        nifcBack();
+                    }
+                });
+
+        nifcGaccButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                chooseGacc();
+            }
+        });
+
+        cancelBarNifc.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (packages != null)
+                    packages.cancel();
+                cancelBarNifc.setVisibility(View.GONE);
+            }
+        });
+
         root.findViewById(R.id.btn_back_forests).setOnClickListener(
                 new View.OnClickListener() {
                     @Override
@@ -494,6 +566,7 @@ public class MapDepot implements IPlugin {
         dtedView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.GONE);
+        nifcView.setVisibility(View.GONE);
     }
 
     private void showPackages(PackageMode mode) {
@@ -502,6 +575,7 @@ public class MapDepot implements IPlugin {
         dtedView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.VISIBLE);
+        nifcView.setVisibility(View.GONE);
         forestSearch.setHint(mode == PackageMode.FORESTS
                 ? R.string.search_forests : R.string.search_recmaps);
         forestSearch.setText("");
@@ -528,6 +602,7 @@ public class MapDepot implements IPlugin {
         homeView.setVisibility(View.GONE);
         dtedView.setVisibility(View.GONE);
         forestView.setVisibility(View.GONE);
+        nifcView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.VISIBLE);
         if (!catalogLoaded)
             loadCatalog();
@@ -540,6 +615,7 @@ public class MapDepot implements IPlugin {
         homeView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.GONE);
+        nifcView.setVisibility(View.GONE);
         dtedView.setVisibility(View.VISIBLE);
         if (!catalogLoaded)
             loadCatalog();
@@ -1320,6 +1396,422 @@ public class MapDepot implements IPlugin {
                 forestStatus.setText(p.name() + " failed: " + message);
             }
         };
+    }
+
+    // ------------------------------------------------------------------ NIFC
+
+    /**
+     * Opens the incident map browser at the operator's own GACC.
+     *
+     * The GACC is remembered rather than asked for every time -- a crew works one
+     * geographic area for a whole assignment -- but it is a button, not a
+     * one-time setting, because the next fire may be somewhere else.
+     */
+    private void showNifc() {
+        homeView.setVisibility(View.GONE);
+        dtedView.setVisibility(View.GONE);
+        baseMapView.setVisibility(View.GONE);
+        forestView.setVisibility(View.GONE);
+        nifcView.setVisibility(View.VISIBLE);
+
+        if (nifc == null)
+            nifc = new NifcClient();
+
+        if (!nifcStack.isEmpty())
+            return;
+
+        final String remembered = loadGacc();
+        if (remembered == null || remembered.isEmpty()) {
+            nifcGaccButton.setText(R.string.nifc_pick_gacc);
+            loadGaccList(true);
+        } else {
+            nifcGaccButton.setText(labelForPath(remembered));
+            if (gaccPaths.isEmpty())
+                loadGaccList(false);
+            browse(remembered, decodeSegment(remembered), true);
+        }
+    }
+
+    /**
+     * The GACC list comes from the server rather than a compiled-in list, so a
+     * region added or renamed upstream appears without a plugin release.
+     *
+     * @param thenPrompt open the chooser as soon as it arrives, for an operator
+     *        who has not picked one yet
+     */
+    private void loadGaccList(final boolean thenPrompt) {
+        nifcStatus.setText(R.string.nifc_loading);
+        nifc.list("", new NifcClient.ListingCallback() {
+            @Override
+            public void onListing(String path, List<NifcClient.Entry> entries,
+                    int hidden) {
+                gaccPaths.clear();
+                gaccLabels.clear();
+                for (final NifcClient.Entry e : entries) {
+                    if (!e.directory)
+                        continue;
+                    gaccPaths.add(e.href);
+                    gaccLabels.add(prettyGacc(e.name));
+                }
+                nifcStatus.setText("");
+                if (thenPrompt)
+                    chooseGacc();
+            }
+
+            @Override
+            public void onError(String message) {
+                nifcStatus.setText("Could not reach NIFC: " + message);
+            }
+        });
+    }
+
+    /**
+     * A button opening a chooser, never a Spinner: a Spinner's dropdown is a
+     * Dialog built from the context that inflated it, and on the plugin context
+     * that is a BadTokenException that takes ATAK down with it.
+     */
+    private void chooseGacc() {
+        if (gaccPaths.isEmpty()) {
+            loadGaccList(true);
+            return;
+        }
+        final String[] items = gaccLabels.toArray(new String[0]);
+        final String current = loadGacc();
+        int checked = -1;
+        for (int i = 0; i < gaccPaths.size(); i++) {
+            if (gaccPaths.get(i).equals(current))
+                checked = i;
+        }
+        new AlertDialog.Builder(hostContext())
+                .setTitle(R.string.nifc_pick_gacc)
+                .setSingleChoiceItems(items, checked,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                d.dismiss();
+                                final String path = gaccPaths.get(which);
+                                saveGacc(path);
+                                nifcGaccButton.setText(gaccLabels.get(which));
+                                nifcStack.clear();
+                                browse(path, decodeSegment(path), true);
+                            }
+                        })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * @param reset true when this is a new starting point rather than a step
+     *        deeper, which is what keeps Back from walking above the GACC
+     */
+    private void browse(final String encodedPath, final String decodedPath,
+            final boolean reset) {
+        if (reset)
+            nifcStack.clear();
+        else
+            nifcStack.push(new String[] {
+                    nifcPath, nifcDecodedPath
+            });
+
+        nifcPath = encodedPath;
+        nifcDecodedPath = decodedPath;
+        nifcRows.clear();
+        nifcAdapter.notifyDataSetChanged();
+        nifcStatus.setText(R.string.nifc_loading);
+
+        nifc.list(encodedPath, new NifcClient.ListingCallback() {
+            @Override
+            public void onListing(String path, List<NifcClient.Entry> entries,
+                    int hidden) {
+                // A listing that arrives after the operator has moved on is not
+                // an error, but it must not overwrite where they are now.
+                if (!path.equals(nifcPath))
+                    return;
+
+                nifcRows.clear();
+                for (final NifcClient.Entry e : entries) {
+                    if (e.directory)
+                        nifcRows.add(e);
+                }
+                nifcRows.addAll(NifcClient.postingsFor(entries, path,
+                        decodedPath));
+                nifcAdapter.notifyDataSetChanged();
+                nifcList.setSelectionAfterHeaderView();
+                describeListing(hidden);
+            }
+
+            @Override
+            public void onError(String message) {
+                if (!encodedPath.equals(nifcPath))
+                    return;
+                nifcStatus.setText("Could not read that folder: " + message);
+            }
+        });
+    }
+
+    /**
+     * Says what is on screen and, as importantly, what is not: a folder holding
+     * geodatabase zips alongside two PDFs would otherwise look like a folder
+     * holding two files.
+     */
+    private void describeListing(int hidden) {
+        int folders = 0, maps = 0;
+        for (final Object o : nifcRows) {
+            if (o instanceof NifcClient.Entry)
+                folders++;
+            else
+                maps++;
+        }
+        final StringBuilder sb = new StringBuilder();
+        final String where = nifcDecodedPath.isEmpty() ? "" : nifcDecodedPath;
+        if (!where.isEmpty())
+            sb.append(where).append('\n');
+        if (folders == 0 && maps == 0) {
+            sb.append(pluginContext.getString(R.string.nifc_empty));
+        } else {
+            if (folders > 0)
+                sb.append(folders).append(folders == 1 ? " folder" : " folders");
+            if (folders > 0 && maps > 0)
+                sb.append(", ");
+            if (maps > 0)
+                sb.append(maps).append(maps == 1 ? " map" : " maps");
+        }
+        if (hidden > 0)
+            sb.append("  ·  ").append(hidden)
+                    .append(hidden == 1 ? " other file hidden"
+                            : " other files hidden");
+        nifcStatus.setText(sb.toString());
+    }
+
+    /** Back walks up the stack, and leaves the browser at the GACC. */
+    private void nifcBack() {
+        if (nifcStack.isEmpty()) {
+            showHome();
+            return;
+        }
+        final String[] previous = nifcStack.pop();
+        // Re-listing rather than caching: a fire's folder gains files during the
+        // day, and a stale list is worse here than a second of loading.
+        nifcPath = previous[0];
+        nifcDecodedPath = previous[1];
+        browse(previous[0], previous[1], true);
+    }
+
+    /**
+     * The real size first. The listing's "4.6M" is Apache rounding, and the
+     * installer treats a length mismatch as a corrupt download -- so handing it
+     * the rounded figure would fail every install.
+     */
+    private void confirmAndInstallPosting(final NifcClient.Posting posting) {
+        if (activePostingId != null) {
+            toast("Already downloading — let it finish first.");
+            return;
+        }
+        nifcStatus.setText("Checking size…");
+        nifc.exactSize(posting.url(), new NifcClient.SizeCallback() {
+            @Override
+            public void onSize(long bytes) {
+                posting.setBytes(bytes);
+                promptForPosting(posting, bytes);
+            }
+
+            @Override
+            public void onError(String message) {
+                // Not fatal: zero simply means the installer skips the space
+                // estimate and the length check rather than refusing to try.
+                Log.w(TAG, "no content length for " + posting.name() + ": "
+                        + message);
+                posting.setBytes(0L);
+                promptForPosting(posting, 0L);
+            }
+        });
+    }
+
+    private void promptForPosting(final NifcClient.Posting posting, long bytes) {
+        final String size = bytes > 0 ? Depot.bytes(bytes) : "an unknown size";
+        new AlertDialog.Builder(hostContext())
+                .setTitle(posting.name())
+                .setMessage("Download " + size + " from NIFC?\n\nPosted as "
+                        + posting.originalName())
+                .setPositiveButton(R.string.get,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                installPosting(posting);
+                            }
+                        })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void installPosting(final NifcClient.Posting posting) {
+        activePostingId = posting.id();
+        nifcStatus.setText("Getting " + posting.name() + "…");
+        cancelBarNifc.setVisibility(View.VISIBLE);
+        nifcAdapter.notifyDataSetChanged();
+        packages.install(posting, new PackageInstaller.Callback() {
+            @Override
+            public void onProgress(Depot.Package p, long done, long total) {
+                nifcStatus.setText(p.name() + " — " + Depot.bytes(done)
+                        + " of " + Depot.bytes(total));
+            }
+
+            @Override
+            public void onInstalled(Depot.Package p, File dest) {
+                activePostingId = null;
+                cancelBarNifc.setVisibility(View.GONE);
+                nifcInstalled.add(p.id());
+                nifcAdapter.notifyDataSetChanged();
+                nifcStatus.setText(p.name()
+                        + " installed — it is in ATAK's overlay list now.");
+            }
+
+            @Override
+            public void onRemoved(Depot.Package p) {
+                nifcInstalled.remove(p.id());
+                nifcAdapter.notifyDataSetChanged();
+            }
+
+            @Override
+            public void onError(Depot.Package p, String message) {
+                activePostingId = null;
+                cancelBarNifc.setVisibility(View.GONE);
+                nifcAdapter.notifyDataSetChanged();
+                if (PackageInstaller.CANCELLED.equals(message)) {
+                    nifcStatus.setText(p.name() + " cancelled — nothing kept.");
+                    return;
+                }
+                Log.w(TAG, "nifc " + p.id() + ": " + message);
+                nifcStatus.setText(p.name() + " failed: " + message);
+            }
+        });
+    }
+
+    // ---- small helpers
+
+    private String loadGacc() {
+        final MapView mv = MapView.getMapView();
+        if (mv == null)
+            return null;
+        return android.preference.PreferenceManager
+                .getDefaultSharedPreferences(mv.getContext())
+                .getString(PREF_GACC, null);
+    }
+
+    /**
+     * Written to ATAK's own preferences on the host context, not the plugin's:
+     * the plugin context's preferences do not survive a plugin reload, and a
+     * remembered GACC that forgets itself on every update is worse than none.
+     */
+    private void saveGacc(String path) {
+        final MapView mv = MapView.getMapView();
+        if (mv == null)
+            return;
+        android.preference.PreferenceManager
+                .getDefaultSharedPreferences(mv.getContext())
+                .edit().putString(PREF_GACC, path).apply();
+    }
+
+    private String labelForPath(String path) {
+        for (int i = 0; i < gaccPaths.size(); i++) {
+            if (gaccPaths.get(i).equals(path))
+                return gaccLabels.get(i);
+        }
+        return prettyGacc(decodeSegment(path));
+    }
+
+    /** {@code calif_n} reads as "Calif N" rather than as a directory name. */
+    private static String prettyGacc(String raw) {
+        final String cleaned = raw.replace('/', ' ').replace('_', ' ').trim();
+        final StringBuilder sb = new StringBuilder();
+        for (final String w : cleaned.split("\\s+")) {
+            if (w.isEmpty())
+                continue;
+            if (sb.length() > 0)
+                sb.append(' ');
+            sb.append(Character.toUpperCase(w.charAt(0)));
+            if (w.length() > 1)
+                sb.append(w.substring(1));
+        }
+        return sb.length() == 0 ? raw : sb.toString();
+    }
+
+    private static String decodeSegment(String encoded) {
+        try {
+            return java.net.URLDecoder.decode(encoded, "UTF-8");
+        } catch (Exception notEncoded) {
+            return encoded;
+        }
+    }
+
+    /**
+     * Folders and maps in one list.
+     *
+     * The row's own click listener does the work rather than the ListView's:
+     * a row containing a Button stops firing OnItemClickListener entirely, which
+     * reads exactly like a dead list.
+     */
+    private final class NifcAdapter extends ArrayAdapter<Object> {
+
+        NifcAdapter(Context ctx) {
+            super(ctx, 0, nifcRows);
+        }
+
+        @Override
+        public View getView(int position, View convert, ViewGroup parent) {
+            View row = convert;
+            if (row == null)
+                row = LayoutInflater.from(pluginContext)
+                        .inflate(R.layout.region_row, parent, false);
+
+            final Object item = getItem(position);
+            if (row == null || item == null)
+                return row;
+
+            final TextView name = row.findViewById(R.id.region_name);
+            final TextView detail = row.findViewById(R.id.region_detail);
+            final Button action = row.findViewById(R.id.region_action);
+            final ProgressBar bar = row.findViewById(R.id.region_progress);
+            bar.setVisibility(View.GONE);
+
+            if (item instanceof NifcClient.Entry) {
+                final NifcClient.Entry e = (NifcClient.Entry) item;
+                name.setText(e.name);
+                detail.setText("Folder");
+                action.setVisibility(View.GONE);
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        browse(nifcPath + e.href,
+                                join(nifcDecodedPath, e.name), false);
+                    }
+                });
+                return row;
+            }
+
+            final NifcClient.Posting posting = (NifcClient.Posting) item;
+            final boolean done = nifcInstalled.contains(posting.id());
+            name.setText(posting.name());
+            detail.setText(posting.describe());
+            action.setVisibility(View.VISIBLE);
+            action.setEnabled(activePostingId == null && !done);
+            action.setText(done ? R.string.installed : R.string.get);
+            row.setOnClickListener(null);
+            action.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    confirmAndInstallPosting(posting);
+                }
+            });
+            return row;
+        }
+    }
+
+    private static String join(String path, String segment) {
+        if (path == null || path.isEmpty())
+            return segment + "/";
+        return path.endsWith("/") ? path + segment + "/"
+                : path + "/" + segment + "/";
     }
 
     private final class PackageAdapter extends ArrayAdapter<Depot.Package> {

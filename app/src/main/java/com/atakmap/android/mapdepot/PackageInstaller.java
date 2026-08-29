@@ -692,7 +692,10 @@ public final class PackageInstaller {
      * by name and does not need to be asked again.
      */
     private static void announce(Depot.Package pkg, File dest) {
-        if (!"grg".equals(pkg.destination())) {
+        // Imagery is found by the scanner. A GRG is not, and neither is an
+        // overlay -- both need the import pipeline to be registered live.
+        final String where = pkg.destination();
+        if (!"grg".equals(where) && !"overlays".equals(where)) {
             BaseMapInstaller.requestLayerScan(dest);
             return;
         }
