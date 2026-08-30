@@ -29,24 +29,24 @@ import java.util.regex.Pattern;
  * result and the rule that two files an operator can both tick must both survive
  * on disk.
  *
- * <h3>The date in the name is the flight date, not the posting date</h3>
+ * <h3>The date in the name is when the imagery was acquired</h3>
  *
  * A sortie flown on the 28th is often posted on the 29th, so the filename and
- * its folder disagree. The name follows the filename, because that is the day
- * the ground looked like this and it is what a crew asks for.
+ * its folder disagree. The name follows the filename: the flight date is the day
+ * the ground looked like this, and the day it reached a web server is not
+ * something a crew asks about.
  *
- * The posting date is added only when the two disagree, and that is not
- * cosmetic. Fifteen files in the archive are the same flight date posted a day
- * apart with different contents -- a reprocessed product, not a duplicate:
+ * One consequence, deliberately accepted. Fifteen files in the archive are the
+ * same flight reprocessed and posted again the next day, so they share a name:
  *
  * <pre>
  * IR/20260817/20260817_Bologna_UAS_IR_11x17_Aerial.pdf   3,529,506 bytes
  * IR/20260818/20260817_Bologna_UAS_IR_11x17_Aerial.pdf   3,355,390 bytes
  * </pre>
  *
- * {@code grg/} is flat, so on the flight date alone the second would quietly
- * replace the first and one of the two maps would be gone. Every other archive
- * folder produces a name with a single date.
+ * {@code grg/} is flat, so taking both replaces the first with the second. That
+ * is the right way round -- the later posting is the reprocessed one -- and it is
+ * the same map of the same flight either way.
  *
  * <h3>The sortie number is part of the name, not a tiebreaker</h3>
  *
@@ -62,10 +62,6 @@ public final class UaswfcNaming {
     /** Every posting leads with the flight date. */
     private static final Pattern LEADING_DATE = Pattern
             .compile("^(20\\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])$");
-
-    /** The posting-date folder these sit in, e.g. {@code IR/20260729}. */
-    private static final Pattern FOLDER_DATE = Pattern
-            .compile("(20\\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])");
 
     /** A trailing sortie number: two to four digits at the end of the name. */
     private static final Pattern SORTIE = Pattern.compile("^\\d{1,4}$");
@@ -113,8 +109,10 @@ public final class UaswfcNaming {
     /**
      * @param fileName the posting's own name
      * @param incidentFolder the fire's folder, e.g. {@code 2026_RoweCreekComplex}
-     * @param folderPath the path below the fire, e.g. {@code IR/20260729}, read
-     *        only for the posting date
+     * @param folderPath the path below the fire, e.g. {@code IR/20260729}.
+     *        Unused: the name takes its date from the filename, which is when
+     *        the sortie flew. Kept so the signature does not change if a later
+     *        rule needs the folder again.
      */
     public static String translate(String fileName, String incidentFolder,
             String folderPath) {
@@ -161,7 +159,6 @@ public final class UaswfcNaming {
         final List<String> product = new ArrayList<>();
         String sortie;
         String flown;
-        String posted;
         String ext;
     }
 
@@ -185,10 +182,6 @@ public final class UaswfcNaming {
         if (!d.matches())
             return null;
         p.flown = d.group(2) + d.group(3) + d.group(1).substring(2);
-
-        final String posted = dateOf(folderPath);
-        if (posted != null && !posted.equals(p.flown))
-            p.posted = posted;
 
         final String incident = NifcNaming.incidentName(incidentFolder);
         if (incident != null)
@@ -230,22 +223,8 @@ public final class UaswfcNaming {
         if (p.sortie != null)
             out.add(p.sortie);
         out.add(p.flown);
-        if (p.posted != null) {
-            out.add("POSTED");
-            out.add(p.posted);
-        }
         final String name = join(out);
         return name.isEmpty() ? null : name + "." + p.ext;
-    }
-
-    /** {@code IR/20260729} to {@code 072926}. */
-    private static String dateOf(String folderPath) {
-        if (folderPath == null)
-            return null;
-        final Matcher m = FOLDER_DATE.matcher(folderPath);
-        if (!m.find())
-            return null;
-        return m.group(2) + m.group(3) + m.group(1).substring(2);
     }
 
     /**
