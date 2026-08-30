@@ -162,6 +162,12 @@ public final class NifcClient implements MapSource {
         });
     }
 
+    /** Apache writes hrefs relative to the folder being listed. */
+    @Override
+    public String childPath(String parentPath, MapSource.Entry child) {
+        return (parentPath == null ? "" : parentPath) + child.href;
+    }
+
     /**
      * The real content length, which the listing does not give.
      *

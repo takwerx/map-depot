@@ -611,7 +611,7 @@ public class MapDepot implements IPlugin {
         // installs and then exists nowhere ATAK can see it.
         if (mode == PackageMode.FORESTS
                 && !PackageInstaller.supportsVectorPackages())
-            forestStatus.setText(R.string.forests_need_57);
+            forestStatus.setText(pluginContext.getString(R.string.forests_need_57));
 
         if (!catalogLoaded)
             loadCatalog();
@@ -916,7 +916,7 @@ public class MapDepot implements IPlugin {
                 status.setText("Map Depot is not running — reload the plugin.");
             return;
         }
-        status.setText(R.string.loading_catalog);
+        status.setText(pluginContext.getString(R.string.loading_catalog));
         client.fetchCatalog(new DepotClient.CatalogCallback() {
             @Override
             public void onCatalog(List<Depot.Region> fetched, boolean cached) {
@@ -931,7 +931,7 @@ public class MapDepot implements IPlugin {
                 loadForests();
 
                 if (cached) {
-                    status.setText(R.string.catalog_offline);
+                    status.setText(pluginContext.getString(R.string.catalog_offline));
                 } else {
                     status.setText("");
                 }
@@ -1458,7 +1458,7 @@ public class MapDepot implements IPlugin {
 
         final String remembered = loadGacc();
         if (remembered == null || remembered.isEmpty()) {
-            nifcGaccButton.setText(R.string.nifc_pick_gacc);
+            nifcGaccButton.setText(pluginContext.getString(R.string.nifc_pick_gacc));
             loadGaccList(true);
         } else {
             nifcGaccButton.setText(labelForPath(remembered));
@@ -1476,7 +1476,7 @@ public class MapDepot implements IPlugin {
      *        who has not picked one yet
      */
     private void loadGaccList(final boolean thenPrompt) {
-        nifcStatus.setText(R.string.nifc_loading);
+        nifcStatus.setText(pluginContext.getString(R.string.nifc_loading));
         source.list("", new MapSource.ListingCallback() {
             @Override
             public void onListing(String path, List<MapSource.Entry> entries,
@@ -1519,7 +1519,7 @@ public class MapDepot implements IPlugin {
                 checked = i;
         }
         new AlertDialog.Builder(hostContext())
-                .setTitle(R.string.nifc_pick_gacc)
+                .setTitle(pluginContext.getString(R.string.nifc_pick_gacc))
                 .setSingleChoiceItems(items, checked,
                         new DialogInterface.OnClickListener() {
                             @Override
@@ -1553,7 +1553,7 @@ public class MapDepot implements IPlugin {
         nifcDecodedPath = decodedPath;
         nifcRows.clear();
         nifcAdapter.notifyDataSetChanged();
-        nifcStatus.setText(R.string.nifc_loading);
+        nifcStatus.setText(pluginContext.getString(R.string.nifc_loading));
 
         source.list(encodedPath, new MapSource.ListingCallback() {
             @Override
@@ -1565,10 +1565,12 @@ public class MapDepot implements IPlugin {
                     return;
 
                 nifcRows.clear();
+                final List<MapSource.Entry> folders = new ArrayList<>();
                 for (final MapSource.Entry e : entries) {
                     if (e.directory)
-                        nifcRows.add(e);
+                        folders.add(e);
                 }
+                nifcRows.addAll(newestFirst(folders));
                 nifcRows.addAll(source.postingsFor(entries, path, decodedPath));
                 nifcAdapter.notifyDataSetChanged();
                 nifcList.setSelectionAfterHeaderView();
@@ -1617,6 +1619,45 @@ public class MapDepot implements IPlugin {
                             : " other files hidden");
         nifcStatus.setText(sb.toString());
     }
+
+    /**
+     * Date-named folders newest first; everything else left as the server had it.
+     *
+     * A fire's IR and GIS folders are one directory per day, and the server
+     * lists them ascending, so the map an operator almost always wants -- today's
+     * -- is at the bottom of a scroll that grows for as long as the fire burns.
+     * Folders that are not dates (a fire's name, DAILY MAP PRODUCT, IAP) keep
+     * their order, where alphabetical is what is wanted.
+     */
+    private static List<MapSource.Entry> newestFirst(
+            List<MapSource.Entry> folders) {
+
+        final List<MapSource.Entry> dated = new ArrayList<>();
+        final List<MapSource.Entry> rest = new ArrayList<>();
+        for (final MapSource.Entry e : folders) {
+            if (DATE_FOLDER.matcher(e.name).matches())
+                dated.add(e);
+            else
+                rest.add(e);
+        }
+        java.util.Collections.sort(dated, new java.util.Comparator<MapSource.Entry>() {
+            @Override
+            public int compare(MapSource.Entry a, MapSource.Entry b) {
+                return digitsOf(b.name).compareTo(digitsOf(a.name));
+            }
+        });
+        final List<MapSource.Entry> out = new ArrayList<>(dated);
+        out.addAll(rest);
+        return out;
+    }
+
+    private static String digitsOf(String s) {
+        return s.replaceAll("[^0-9]", "");
+    }
+
+    /** {@code 20260729}, and the separated spellings of the same thing. */
+    private static final java.util.regex.Pattern DATE_FOLDER =
+            java.util.regex.Pattern.compile("^\\d{4}[-_.]?\\d{2}[-_.]?\\d{2}$");
 
     /** Back walks up the stack, and leaves the browser at the GACC. */
     private void nifcBack() {
@@ -1668,7 +1709,7 @@ public class MapDepot implements IPlugin {
                 .setTitle(posting.name())
                 .setMessage("Download " + size + " from NIFC?\n\nPosted as "
                         + posting.originalName())
-                .setPositiveButton(R.string.get,
+                .setPositiveButton(pluginContext.getString(R.string.get),
                         new DialogInterface.OnClickListener() {
                             @Override
                             public void onClick(DialogInterface d, int which) {
@@ -1817,7 +1858,7 @@ public class MapDepot implements IPlugin {
                 row.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        browse(nifcPath + e.href,
+                        browse(source.childPath(nifcPath, e),
                                 join(nifcDecodedPath, e.name), false);
                     }
                 });
@@ -1830,7 +1871,8 @@ public class MapDepot implements IPlugin {
             detail.setText(posting.describe());
             action.setVisibility(View.VISIBLE);
             action.setEnabled(activePostingId == null && !done);
-            action.setText(done ? R.string.installed : R.string.get);
+            action.setText(pluginContext.getString(
+                    done ? R.string.installed : R.string.get));
             row.setOnClickListener(null);
             action.setOnClickListener(new View.OnClickListener() {
                 @Override

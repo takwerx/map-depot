@@ -31,6 +31,17 @@ public interface MapSource {
     void list(String path, ListingCallback cb);
 
     /**
+     * The path of a folder found inside {@code parentPath}.
+     *
+     * Sources disagree about this and the disagreement is invisible until it
+     * 404s: NIFC's Apache listing gives hrefs relative to the folder being
+     * listed, so the parent has to be prepended, while UASWFC's API returns each
+     * one already rooted at the site, so prepending anything corrupts it. The
+     * browser must not have to know which is which.
+     */
+    String childPath(String parentPath, Entry child);
+
+    /**
      * The exact byte count for a file, which not every source's listing gives.
      *
      * {@link PackageInstaller} treats a length mismatch as a corrupt download,

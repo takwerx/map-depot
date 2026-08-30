@@ -188,6 +188,12 @@ public final class UaswfcClient implements MapSource {
         });
     }
 
+    /** The API returns each folder's path already rooted at the site. */
+    @Override
+    public String childPath(String parentPath, Entry child) {
+        return child.href;
+    }
+
     /**
      * The listing already carries exact byte counts, so this answers from what
      * the caller was given rather than making a second request. It exists to
