@@ -441,6 +441,29 @@ public final class PackageInstaller {
             return;
         }
 
+        // A KMZ is not a raster dataset, so the layer-stack search below cannot
+        // find it however long it polls. ATAK has a general answer for this:
+        // ZOOM_TO_FILE_ACTION hands a path to URIContentManager, which finds
+        // whichever handler owns that file and asks it to go there. It works for
+        // anything ATAK has a handler for, and the KMZ is what needs it.
+        //
+        // The rasters keep the search below, which is proven and reports the
+        // "still scanning" case the operator can act on.
+        if (!"grg".equals(pkg.destination())) {
+            try {
+                final android.content.Intent i = new android.content.Intent(
+                        "com.atakmap.android.importexport.ZOOM_TO_FILE_ACTION");
+                i.putExtra("filepath", f.getAbsolutePath());
+                com.atakmap.android.ipc.AtakBroadcast.getInstance()
+                        .sendBroadcast(i);
+                post(cb, pkg, "going", null);
+            } catch (LinkageError | RuntimeException notThisBuild) {
+                Log.w(TAG, "could not go to " + f.getName() + ": " + notThisBuild);
+                post(cb, pkg, "unavailable", "this build cannot go there");
+            }
+            return;
+        }
+
         final boolean overlay = "grg".equals(pkg.destination());
         final String name = f.getName();
 
