@@ -1774,9 +1774,10 @@ public class MapDepot implements IPlugin {
         final String size = bytes > 0 ? Depot.bytes(bytes) : "an unknown size";
         new AlertDialog.Builder(hostContext())
                 .setTitle(posting.name())
-                .setMessage("Download " + size + " from NIFC?\n\nPosted as "
-                        + posting.originalName())
-                .setPositiveButton(pluginContext.getString(R.string.get),
+                .setMessage("Download " + size + " from "
+                        + (source == null ? "the archive" : source.label())
+                        + "?\n\nPosted as " + posting.originalName())
+                .setPositiveButton(pluginContext.getString(R.string.download),
                         new DialogInterface.OnClickListener() {
                             @Override
                             public void onClick(DialogInterface d, int which) {

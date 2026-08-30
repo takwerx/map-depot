@@ -324,11 +324,59 @@ public final class NifcNaming {
         }
 
         // ---- classify what follows the date
+        //
+        // Between the plot time and the unit id sit the fires this map covers.
+        // Usually that is one and it is the folder's own; sometimes a team runs
+        // two fires out of one folder and a map covers both:
+        //
+        //   airops_..._2125_Timber_Plaskett_CALPF002475_0830day.pdf
+        //
+        // Those names belong in the incident, not trailing behind the product as
+        // a qualifier, and a Plaskett-only map should say PLASKETT rather than
+        // borrowing TIMBER from the folder it happens to sit in.
         final List<String> tail = new ArrayList<>();
+        final List<String> fires = new ArrayList<>();
+        // Whether each entry of "fires" was recognised as the folder's own fire.
+        // Kept in step so the order of "Timber_Plaskett" survives while still
+        // knowing which of the two the folder already knows about.
+        final List<Boolean> firesKnown = new ArrayList<>();
+        boolean unitSeen = false;
         for (final String raw : after) {
-            if (claimIdentifier(p, raw, year))
+            final boolean hadUnit = p.unit != null || p.state != null;
+            final boolean claimed = claimIdentifier(p, raw, year);
+            final boolean nowUnit = p.unit != null || p.state != null;
+            if (!hadUnit && nowUnit) {
+                unitSeen = true;
                 continue;
+            }
+            if (claimed) {
+                if (!unitSeen && isIncidentWord(raw, p.incident)) {
+                    fires.add(raw);
+                    firesKnown.add(Boolean.TRUE);
+                }
+                continue;
+            }
+            if (!unitSeen) {
+                fires.add(raw);
+                firesKnown.add(Boolean.FALSE);
+                continue;
+            }
             tail.add(raw);
+        }
+
+        if (unitSeen && !fires.isEmpty()) {
+            adoptFires(p, fires);
+        } else {
+            // Without a unit id there is no boundary to trust -- the date-led IR
+            // postings put the product straight after the date -- so nothing is
+            // promoted. The folder's own name is still dropped rather than said
+            // a second time; everything else goes back to being a qualifier.
+            final List<String> back = new ArrayList<>();
+            for (int i = 0; i < fires.size(); i++) {
+                if (!firesKnown.get(i).booleanValue())
+                    back.add(fires.get(i));
+            }
+            tail.addAll(0, back);
         }
 
         // ---- and, when there was no anchor, what precedes it too
@@ -440,6 +488,51 @@ public final class NifcNaming {
         if (YEAR.matcher(raw).matches())
             return true;
         return isIncidentWord(raw, p.incident);
+    }
+
+    /**
+     * Replaces the folder's fire name with the fires the filename actually names.
+     *
+     * The folder stays authoritative for *spelling*: a token that is the folder's
+     * name, however it is written, is emitted the folder's way. That is what
+     * keeps {@code RoweCreekCopmlex} -- a transposition in all ten of one date's
+     * IR PDFs -- from reaching the operator's map library, while still letting
+     * {@code Timber_Plaskett} say both fires.
+     */
+    private static void adoptFires(Parts p, List<String> fires) {
+        final List<String> folder = new ArrayList<>(p.incident);
+        final List<String> out = new ArrayList<>();
+        for (final String raw : fires) {
+            String use = raw;
+            for (final String w : folder) {
+                if (sameWord(w, raw)) {
+                    use = w;
+                    break;
+                }
+            }
+            out.add(use);
+        }
+        p.incident.clear();
+        p.incident.addAll(out);
+    }
+
+    /**
+     * Whether two words are the same word, allowing for the letters having been
+     * typed out of order. Same letters in any order is a deliberate choice:
+     * COMPLEX against COPMLEX is the real case, and two genuinely different fire
+     * names being anagrams of each other is not.
+     */
+    private static boolean sameWord(String a, String b) {
+        final String x = a.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.US);
+        final String y = b.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.US);
+        if (x.equals(y))
+            return true;
+        if (x.length() != y.length() || x.length() < 4)
+            return false;
+        final char[] p1 = x.toCharArray(), p2 = y.toCharArray();
+        java.util.Arrays.sort(p1);
+        java.util.Arrays.sort(p2);
+        return java.util.Arrays.equals(p1, p2);
     }
 
     /**
@@ -629,7 +722,9 @@ public final class NifcNaming {
         if (words.isEmpty())
             return false;
         for (final String w : words) {
-            if (w.equalsIgnoreCase(token))
+            // sameWord, not equals: RoweCreekCopmlex is a transposition in all
+            // ten of one date's IR PDFs, and it is still that fire.
+            if (sameWord(w, token))
                 return true;
         }
         // The whole incident run as one token, which is how the filename spells
@@ -637,7 +732,7 @@ public final class NifcNaming {
         final StringBuilder joined = new StringBuilder();
         for (final String w : words)
             joined.append(w);
-        return joined.toString().equalsIgnoreCase(token.replace("-", ""));
+        return sameWord(joined.toString(), token);
     }
 
     /**
