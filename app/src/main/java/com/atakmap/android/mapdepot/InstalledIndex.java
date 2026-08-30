@@ -153,6 +153,25 @@ public final class InstalledIndex {
         return out;
     }
 
+    /**
+     * The record for a posting, found by its URL rather than by the name it
+     * would be given today.
+     *
+     * The naming rules improve, and when they do, a map already on the device
+     * carries a name the new rules would not produce -- so a name-only check
+     * reports it as not installed and offers to download it again. The URL is
+     * what does not change.
+     */
+    public static Record byUrl(String url) {
+        if (url == null || url.isEmpty())
+            return null;
+        for (final Record r : all()) {
+            if (url.equals(r.url))
+                return r;
+        }
+        return null;
+    }
+
     public static void add(Record r) {
         final List<Record> kept = new ArrayList<>();
         for (final Record existing : all()) {

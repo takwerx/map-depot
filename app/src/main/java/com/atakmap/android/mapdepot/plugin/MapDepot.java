@@ -1597,13 +1597,31 @@ public class MapDepot implements IPlugin {
                 // Asked of the disk, not remembered, so it is still right after
                 // ATAK has been closed and reopened -- and after a map has been
                 // deleted outside the plugin.
+                //
+                // Checked by URL first: a map downloaded under an older naming
+                // rule sits on disk under a name today's rules would not
+                // produce, and a name-only check would offer to download it all
+                // over again. Where the index knows it, the row takes the name
+                // the file actually has, so Remove and "go there" reach it.
+                final List<Object> resolved = new ArrayList<>();
                 for (final MapSource.Posting posting : postings) {
-                    if (PackageInstaller.isInstalled(posting))
-                        nifcInstalled.add(posting.id());
+                    final InstalledIndex.Record known =
+                            InstalledIndex.byUrl(posting.url());
+                    MapSource.Posting row = posting;
+                    if (known != null && known.file().isFile()
+                            && !known.installName.equals(posting.name()))
+                        row = new MapSource.Posting(posting.url(),
+                                posting.originalName(), known.installName,
+                                posting.bytes(), posting.describe());
+
+                    if (known != null && known.file().isFile()
+                            || PackageInstaller.isInstalled(row))
+                        nifcInstalled.add(row.id());
                     else
-                        nifcInstalled.remove(posting.id());
+                        nifcInstalled.remove(row.id());
+                    resolved.add(row);
                 }
-                nifcAllRows.addAll(postings);
+                nifcAllRows.addAll(resolved);
 
                 nifcHidden = hidden;
                 applyNifcFilter();

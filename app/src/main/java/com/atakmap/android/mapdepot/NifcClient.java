@@ -472,9 +472,16 @@ public final class NifcClient implements MapSource {
             final MapSource.Entry e = byName.get(t.getKey());
             if (e == null)
                 continue;
+            // Zero, not the listing's figure. Apache rounds -- "6.1M" for a
+            // 6,146,536-byte file -- and PackageInstaller treats a size that
+            // does not match the file on disk as a different file, so carrying
+            // the rounded number here made every already-downloaded NIFC map
+            // read as not installed. The real length is fetched with a HEAD
+            // before the download, which is where an integrity check belongs.
+            // The approximate size still reaches the operator, in the row text.
             out.add(new MapSource.Posting(root() + basePath + e.href, e.name,
-                    t.getValue(), e.bytes,
-                    Depot.bytes(e.bytes) + "  ·  " + e.name));
+                    t.getValue(), 0L,
+                    "~" + Depot.bytes(e.bytes) + "  ·  " + e.name));
         }
         return out;
     }
