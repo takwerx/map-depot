@@ -677,12 +677,15 @@ public final class PackageInstaller {
      */
     private static boolean retire(Depot.Package pkg, File f) {
         final String path = f.getAbsolutePath();
-        if ("grg".equals(pkg.destination())) {
+        if ("grg".equals(pkg.destination())
+                || "overlays".equals(pkg.destination())) {
             try {
                 final android.content.Intent i = new android.content.Intent(
                         "com.atakmap.android.importexport.DELETE_DATA");
                 i.putExtra("uri", path);
-                i.putExtra("contentType", "External GRG Data");
+                i.putExtra("contentType", "grg".equals(pkg.destination())
+                        ? "External GRG Data"
+                        : "KML");
                 i.putExtra("mimeType", "application/octet-stream");
                 com.atakmap.android.ipc.AtakBroadcast.getInstance().sendBroadcast(i);
 
@@ -699,7 +702,11 @@ public final class PackageInstaller {
         }
 
         final boolean gone = !f.exists() || f.delete();
-        if (gone && !"grg".equals(pkg.destination()))
+        // Imagery is found by a scanner, so it has to be told to look again now
+        // the file is gone. An overlay was handed to the import pipeline, and
+        // handing that pipeline a file that no longer exists only logs "No file
+        // to import" -- so it is asked to unload, not to import.
+        if (gone && "imagery".equals(pkg.destination()))
             announce(pkg, new File(dirFor(pkg), pkg.fileName()));
         return gone;
     }

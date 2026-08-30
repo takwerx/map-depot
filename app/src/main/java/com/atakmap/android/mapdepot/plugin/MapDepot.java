@@ -1812,6 +1812,56 @@ public class MapDepot implements IPlugin {
         });
     }
 
+    /**
+     * Removing from here rather than from ATAK's overlay manager is the safe
+     * path, and not only the convenient one: {@code PackageInstaller.retire}
+     * hands ATAK a delete and lets it unload the layer *before* the file goes,
+     * which is the opposite of the overlay manager's own order. Deleting a GRG
+     * there leaves the tile reader holding a path that no longer exists, and
+     * disposing it dereferences a freed GDAL dataset.
+     */
+    private void confirmAndRemovePosting(final MapSource.Posting posting) {
+        new AlertDialog.Builder(hostContext())
+                .setTitle(posting.name())
+                .setMessage("Remove this map from the device?")
+                .setPositiveButton(pluginContext.getString(R.string.remove),
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                removePosting(posting);
+                            }
+                        })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void removePosting(final MapSource.Posting posting) {
+        nifcStatus.setText("Removing " + posting.name() + "…");
+        packages.uninstall(posting, new PackageInstaller.Callback() {
+            @Override
+            public void onProgress(Depot.Package p, long done, long total) {
+            }
+
+            @Override
+            public void onInstalled(Depot.Package p, File dest) {
+            }
+
+            @Override
+            public void onRemoved(Depot.Package p) {
+                nifcInstalled.remove(p.id());
+                applyNifcFilter();
+                nifcStatus.setText(p.name() + " removed.");
+            }
+
+            @Override
+            public void onError(Depot.Package p, String message) {
+                Log.w(TAG, "removing " + p.id() + ": " + message);
+                nifcStatus.setText("Could not remove " + p.name()
+                        + ": " + message);
+            }
+        });
+    }
+
     private void installPosting(final MapSource.Posting posting) {
         activePostingId = posting.id();
         nifcDone = 0;
@@ -1997,13 +2047,17 @@ public class MapDepot implements IPlugin {
             action.setVisibility(View.VISIBLE);
             // While one map is downloading the others are not offered: these run
             // to tens of megabytes and two at once on a hotspot serves nobody.
-            action.setEnabled(activePostingId == null && !done);
+            // Removing one already downloaded stays available.
+            action.setEnabled(activePostingId == null || done);
             action.setText(pluginContext.getString(
-                    done ? R.string.installed : R.string.download));
+                    done ? R.string.remove : R.string.download));
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    confirmAndInstallPosting(posting);
+                    if (done)
+                        confirmAndRemovePosting(posting);
+                    else
+                        confirmAndInstallPosting(posting);
                 }
             });
 
