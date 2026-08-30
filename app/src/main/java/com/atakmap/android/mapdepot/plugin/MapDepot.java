@@ -189,7 +189,17 @@ public class MapDepot implements IPlugin {
     private Button nifcGaccButton, cancelBarNifc;
     private NifcAdapter nifcAdapter;
 
+    /** Everything the folder holds; {@link #nifcRows} is this after filtering. */
+    private final List<Object> nifcAllRows = new ArrayList<>();
     private final List<Object> nifcRows = new ArrayList<>();
+    private Button nifcFilter;
+    private Shown nifcShown = Shown.ALL;
+
+    /** Progress for the row currently downloading, so it shows on the row. */
+    private long nifcDone, nifcTotal;
+
+    /** How many entries the source withheld, kept for the status line. */
+    private int nifcHidden;
     private final Deque<String[]> nifcStack = new ArrayDeque<>();
     private final List<String> gaccPaths = new ArrayList<>();
     private final List<String> gaccLabels = new ArrayList<>();
@@ -484,6 +494,14 @@ public class MapDepot implements IPlugin {
         nifcStatus = root.findViewById(R.id.nifc_status);
         nifcGaccButton = root.findViewById(R.id.nifc_gacc);
         cancelBarNifc = root.findViewById(R.id.cancel_bar_nifc);
+        nifcFilter = root.findViewById(R.id.nifc_filter);
+        nifcFilter.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                nifcShown = nextShown(nifcShown);
+                applyNifcFilter();
+            }
+        });
         nifcAdapter = new NifcAdapter(pluginContext);
         nifcList.setAdapter(nifcAdapter);
 
@@ -1564,17 +1582,31 @@ public class MapDepot implements IPlugin {
                 if (!path.equals(nifcPath))
                     return;
 
-                nifcRows.clear();
+                nifcAllRows.clear();
                 final List<MapSource.Entry> folders = new ArrayList<>();
                 for (final MapSource.Entry e : entries) {
                     if (e.directory)
                         folders.add(e);
                 }
-                nifcRows.addAll(newestFirst(folders));
-                nifcRows.addAll(source.postingsFor(entries, path, decodedPath));
-                nifcAdapter.notifyDataSetChanged();
+                nifcAllRows.addAll(newestFirst(folders));
+
+                final List<MapSource.Posting> postings =
+                        source.postingsFor(entries, path, decodedPath);
+
+                // Asked of the disk, not remembered, so it is still right after
+                // ATAK has been closed and reopened -- and after a map has been
+                // deleted outside the plugin.
+                for (final MapSource.Posting posting : postings) {
+                    if (PackageInstaller.isInstalled(posting))
+                        nifcInstalled.add(posting.id());
+                    else
+                        nifcInstalled.remove(posting.id());
+                }
+                nifcAllRows.addAll(postings);
+
+                nifcHidden = hidden;
+                applyNifcFilter();
                 nifcList.setSelectionAfterHeaderView();
-                describeListing(hidden);
             }
 
             @Override
@@ -1584,6 +1616,41 @@ public class MapDepot implements IPlugin {
                 nifcStatus.setText("Could not read that folder: " + message);
             }
         });
+    }
+
+    /**
+     * Applies the installed/available filter.
+     *
+     * Folders are never filtered out -- they are how the operator gets anywhere,
+     * and a folder is neither installed nor available.
+     */
+    private void applyNifcFilter() {
+        nifcRows.clear();
+        int installed = 0, available = 0;
+        for (final Object o : nifcAllRows) {
+            if (o instanceof MapSource.Entry) {
+                nifcRows.add(o);
+                continue;
+            }
+            final MapSource.Posting posting = (MapSource.Posting) o;
+            final boolean have = nifcInstalled.contains(posting.id());
+            if (have)
+                installed++;
+            else
+                available++;
+            if (nifcShown == Shown.ALL
+                    || (nifcShown == Shown.INSTALLED && have)
+                    || (nifcShown == Shown.AVAILABLE && !have))
+                nifcRows.add(posting);
+        }
+
+        final int count = nifcShown == Shown.INSTALLED ? installed
+                : nifcShown == Shown.AVAILABLE ? available
+                        : installed + available;
+        nifcFilter.setText(pluginContext.getString(labelFor(nifcShown))
+                + " (" + count + ")");
+        nifcAdapter.notifyDataSetChanged();
+        describeListing(nifcHidden);
     }
 
     /**
@@ -1720,26 +1787,56 @@ public class MapDepot implements IPlugin {
                 .show();
     }
 
+    /**
+     * A freshly downloaded map is not in ATAK's list the instant the download
+     * ends -- the scan takes as long as it takes. Say so, rather than letting
+     * the tap look broken.
+     */
+    private void goToPosting(final MapSource.Posting posting) {
+        PackageInstaller.goTo(posting, new PackageInstaller.GoTo() {
+            @Override
+            public void onGoing(Depot.Package p) {
+                nifcStatus.setText("Going to " + p.name());
+            }
+
+            @Override
+            public void onWaiting(Depot.Package p) {
+                nifcStatus.setText("Adding to the map list…");
+            }
+
+            @Override
+            public void onUnavailable(Depot.Package p, String why) {
+                nifcStatus.setText("Could not go there: " + why);
+            }
+        });
+    }
+
     private void installPosting(final MapSource.Posting posting) {
         activePostingId = posting.id();
+        nifcDone = 0;
+        nifcTotal = posting.bytes();
         nifcStatus.setText("Getting " + posting.name() + "…");
         cancelBarNifc.setVisibility(View.VISIBLE);
         nifcAdapter.notifyDataSetChanged();
         packages.install(posting, new PackageInstaller.Callback() {
             @Override
             public void onProgress(Depot.Package p, long done, long total) {
+                nifcDone = done;
+                nifcTotal = total;
                 nifcStatus.setText(p.name() + " — " + Depot.bytes(done)
                         + " of " + Depot.bytes(total));
+                nifcAdapter.notifyDataSetChanged();
             }
 
             @Override
             public void onInstalled(Depot.Package p, File dest) {
                 activePostingId = null;
+                nifcDone = nifcTotal = 0;
                 cancelBarNifc.setVisibility(View.GONE);
                 nifcInstalled.add(p.id());
-                nifcAdapter.notifyDataSetChanged();
+                applyNifcFilter();
                 nifcStatus.setText(p.name()
-                        + " installed — it is in ATAK's overlay list now.");
+                        + " installed — tap it to go there.");
             }
 
             @Override
@@ -1751,6 +1848,7 @@ public class MapDepot implements IPlugin {
             @Override
             public void onError(Depot.Package p, String message) {
                 activePostingId = null;
+                nifcDone = nifcTotal = 0;
                 cancelBarNifc.setVisibility(View.GONE);
                 nifcAdapter.notifyDataSetChanged();
                 if (PackageInstaller.CANCELLED.equals(message)) {
@@ -1867,19 +1965,54 @@ public class MapDepot implements IPlugin {
 
             final MapSource.Posting posting = (MapSource.Posting) item;
             final boolean done = nifcInstalled.contains(posting.id());
+            final boolean active = posting.id().equals(activePostingId);
+
             name.setText(posting.name());
-            detail.setText(posting.describe());
+
+            if (done) {
+                // Only the hint is coloured; the size stays the same weight as
+                // every other row, so the list does not turn into a christmas
+                // tree once a few maps are installed.
+                final String hint = " · tap to go there";
+                final SpannableString line =
+                        new SpannableString(posting.describe() + hint);
+                line.setSpan(
+                        new ForegroundColorSpan(pluginContext.getResources()
+                                .getColor(R.color.action_green)),
+                        line.length() - hint.length(), line.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                detail.setText(line);
+            } else {
+                detail.setText(posting.describe());
+            }
+
+            if (active && nifcTotal > 0) {
+                bar.setVisibility(View.VISIBLE);
+                bar.setProgress((int) (nifcDone * 100L / nifcTotal));
+            } else {
+                bar.setVisibility(View.GONE);
+            }
+
             action.setVisibility(View.VISIBLE);
+            // While one map is downloading the others are not offered: these run
+            // to tens of megabytes and two at once on a hotspot serves nobody.
             action.setEnabled(activePostingId == null && !done);
             action.setText(pluginContext.getString(
-                    done ? R.string.installed : R.string.get));
-            row.setOnClickListener(null);
+                    done ? R.string.installed : R.string.download));
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     confirmAndInstallPosting(posting);
                 }
             });
+
+            // An installed map is a place to go, the same as a forest map is.
+            row.setOnClickListener(done ? new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    goToPosting(posting);
+                }
+            } : null);
             return row;
         }
     }

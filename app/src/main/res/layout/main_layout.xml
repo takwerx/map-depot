@@ -327,6 +327,17 @@
                 android:layout_height="wrap_content"
                 android:text="@string/back" />
 
+            <!-- States what it will cost before it is used: "Installed (3)",
+                 not "Installed". Otherwise the only way to learn what the
+                 control does is to press it and watch the list move. -->
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/nifc_filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="@string/filter_all" />
+
             <!-- The GACC is remembered, so this reads as the operator's own
                  region rather than as a filter they have to set every time. -->
             <Button

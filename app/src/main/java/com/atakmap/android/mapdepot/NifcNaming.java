@@ -79,10 +79,15 @@ import java.util.regex.Pattern;
  * {@code arch_c} and {@code arch_e}, is five files and one name. Across the
  * 978-posting sample that is 152 files eating each other.
  *
- * So the discriminators are not discarded, they are held back and spent only
- * where a listing actually needs them: a name is built plain, and only if
- * something else in the same folder claims it does it grow a paper size, then a
- * time, then a number. Nothing pays for a distinction it does not need.
+ * So the discriminator is held back and spent only where a listing actually
+ * needs it: a name is built plain, and only if something else in the same folder
+ * claims it does it grow the plot time, and then a number. Nothing pays for a
+ * distinction it does not need.
+ *
+ * Paper size is never spent, even to break a tie. A sheet size is not something
+ * an operator chooses a map by, and Timber posts the same ops map as
+ * {@code arch_d} and {@code arch_e}, which used to put ARCH-E in the name. The
+ * plot time separates those two and at least means something.
  */
 public final class NifcNaming {
 
@@ -124,9 +129,8 @@ public final class NifcNaming {
                     Pattern.CASE_INSENSITIVE);
 
     /**
-     * Paper size and orientation. These describe the sheet, not the map, so they
-     * are dropped -- unless two files in one folder differ only by them, in which
-     * case the size is the only thing telling them apart and it comes back.
+     * Paper size and orientation. These describe the sheet, not the map, and are
+     * dropped outright -- never carried, and never used to break a tie.
      */
     private static final Set<String> SIZE = new HashSet<>(Arrays.asList(
             "arch", "ansi", "letter", "tabloid", "ledger",
@@ -152,6 +156,10 @@ public final class NifcNaming {
     private static final Set<String> NOISE = new HashSet<>(Arrays.asList(
             "map", "maps", "final", "draft", "copy", "new", "v1", "v2",
             "incident", "fire",
+            // Rides along on the branch and division breakouts --
+            // ops_mp_arch_e_land_..._Branch 20.pdf -- and says nothing to an
+            // operator that the rest of the name does not already say.
+            "mp", "opt",
             // left behind when a posting is named "....pdf.pdf", which happens
             "pdf", "kmz", "zip"));
 
@@ -179,7 +187,7 @@ public final class NifcNaming {
     public static String translate(String fileName, String incidentFolder,
             String folderPath, String modified) {
         final Parts p = parse(fileName, incidentFolder, folderPath, modified);
-        return p == null ? fileName : render(p, false, false);
+        return p == null ? fileName : render(p, false);
     }
 
     /**
@@ -204,12 +212,14 @@ public final class NifcNaming {
                 continue;
             }
 
-            // Spend a discriminator only when the plain name is already claimed.
-            String name = render(p, false, false);
+            // Spend a discriminator only when the plain name is already
+            // claimed. Paper size is never one of them: a sheet size is not
+            // something an operator picks a map by, and Timber posts the same
+            // ops map as arch_d and arch_e, which put ARCH-E in the name. The
+            // plot time tells those two apart and means something.
+            String name = render(p, false);
             if (taken.contains(lower(name)))
-                name = render(p, true, false);
-            if (taken.contains(lower(name)))
-                name = render(p, true, true);
+                name = render(p, true);
 
             out.put(file, unique(name, taken));
         }
@@ -263,7 +273,8 @@ public final class NifcNaming {
         final Parts p = new Parts();
         p.ext = fileName.substring(dot + 1).toLowerCase(Locale.US);
 
-        final List<String> tokens = tokenize(fileName.substring(0, dot));
+        final List<String> tokens = mergeSplitUnitIds(
+                tokenize(fileName.substring(0, dot)));
         if (tokens.isEmpty())
             return null;
 
@@ -386,20 +397,77 @@ public final class NifcNaming {
         }
         final Matcher op = OP_PERIOD.matcher(raw);
         if (op.matches()) {
-            // The period this map is for beats the moment it was plotted.
+            // The period this map is for beats the moment it was plotted --
+            // but only when it is a date at all. Timber posts "2114day", which
+            // read as month 21 and produced 211426.
             final String yy = year != null ? year.substring(2) : null;
-            if (yy != null)
+            final int month = Integer.parseInt(op.group(1));
+            final int day = Integer.parseInt(op.group(2));
+            final boolean real = month >= 1 && month <= 12
+                    && day >= 1 && day <= 31;
+            if (yy != null && real)
                 p.mmddyy = op.group(1) + op.group(2) + yy;
-            return true;
+            return real;
         }
         if (TIME.matcher(raw).matches()) {
-            if (p.time == null)
+            // Two bare numbers can follow the date and they mean different
+            // things, told apart by which comes first:
+            //
+            //   ops_mp_arch_e_land_20260829_2140_Timber_CALPF002271_0830_DIV B
+            //                               ^plot time          op period^
+            //
+            // The first is when it came off the plotter, the second is the shift
+            // it is for -- and it is the shift that the operator wants the map
+            // named after. Most postings spell the second one "0830day", which
+            // OP_PERIOD catches above; plenty write it bare, and reading that as
+            // another timestamp dated this map to the day it was drawn.
+            if (p.time == null) {
                 p.time = raw;
+                return true;
+            }
+            if (raw.length() == 4) {
+                final int month = Integer.parseInt(raw.substring(0, 2));
+                final int day = Integer.parseInt(raw.substring(2));
+                final String yy = year != null ? year.substring(2) : null;
+                if (yy != null && month >= 1 && month <= 12
+                        && day >= 1 && day <= 31) {
+                    p.mmddyy = raw + yy;
+                    return true;
+                }
+            }
             return true;
         }
         if (YEAR.matcher(raw).matches())
             return true;
         return isIncidentWord(raw, p.incident);
+    }
+
+    /**
+     * Rejoins a unit identifier the posting split with a hyphen.
+     *
+     * Timber writes both {@code CALPF002271} and {@code CA-LPF002271} for the
+     * same unit, and the hyphen is a separator everywhere else, so the second
+     * spelling arrives as two tokens: "LPF002271" is recognised and reduced to
+     * LPF, while the orphaned "CA" drifts to the end as a qualifier and the name
+     * reads LPF-TIMBER-MAP-TRANS-NORTH-CA.
+     */
+    private static List<String> mergeSplitUnitIds(List<String> tokens) {
+        final List<String> out = new ArrayList<>();
+        for (int i = 0; i < tokens.size(); i++) {
+            final String t = tokens.get(i);
+            if (i + 1 < tokens.size()
+                    && t.length() == 2
+                    && t.equals(t.toUpperCase(Locale.US))
+                    && Character.isLetter(t.charAt(0))
+                    && Character.isLetter(t.charAt(1))
+                    && UNIT_ID.matcher(tokens.get(i + 1)).matches()) {
+                out.add(t + tokens.get(i + 1));
+                i++;
+                continue;
+            }
+            out.add(t);
+        }
+        return out;
     }
 
     /** {@code 2026_RoweCreekComplex} to {@code 2026}. */
@@ -434,7 +502,7 @@ public final class NifcNaming {
 
     // ------------------------------------------------------------ rendering
 
-    private static String render(Parts p, boolean withSize, boolean withTime) {
+    private static String render(Parts p, boolean withTime) {
         final List<String> out = new ArrayList<>();
         if (p.state != null)
             out.add(p.state);
@@ -445,8 +513,6 @@ public final class NifcNaming {
         out.addAll(p.type);
         out.addAll(p.areas);
         out.addAll(p.renders);
-        if (withSize)
-            out.addAll(p.size);
         if (withTime && p.time != null)
             out.add(p.time);
         if (p.mmddyy != null)
