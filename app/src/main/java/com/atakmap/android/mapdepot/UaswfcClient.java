@@ -195,16 +195,15 @@ public final class UaswfcClient implements MapSource {
     }
 
     /**
-     * The listing already carries exact byte counts, so this answers from what
-     * the caller was given rather than making a second request. It exists to
-     * satisfy the contract, not because this source needs it.
+     * The API's listing already gives exact byte counts, so the posting is
+     * already carrying the right answer and no second request is needed.
      */
     @Override
-    public void exactSize(final String url, final SizeCallback cb) {
+    public void exactSize(final Posting posting, final SizeCallback cb) {
         main.post(new Runnable() {
             @Override
             public void run() {
-                cb.onSize(0L);
+                cb.onSize(posting.bytes());
             }
         });
     }

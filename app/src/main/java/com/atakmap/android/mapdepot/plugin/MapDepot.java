@@ -1751,7 +1751,7 @@ public class MapDepot implements IPlugin {
             return;
         }
         nifcStatus.setText("Checking size…");
-        source.exactSize(posting.url(), new MapSource.SizeCallback() {
+        source.exactSize(posting, new MapSource.SizeCallback() {
             @Override
             public void onSize(long bytes) {
                 posting.setBytes(bytes);

@@ -309,6 +309,21 @@ public final class PackageInstaller {
         }
     }
 
+    /** {@code Content-Range: bytes 0-1023/4096} to 4096, or 0 if it is absent. */
+    private static long totalFromContentRange(HttpURLConnection conn) {
+        final String v = conn.getHeaderField("Content-Range");
+        if (v == null)
+            return 0L;
+        final int slash = v.lastIndexOf('/');
+        if (slash < 0 || slash + 1 >= v.length())
+            return 0L;
+        try {
+            return Long.parseLong(v.substring(slash + 1).trim());
+        } catch (NumberFormatException unknown) {
+            return 0L;
+        }
+    }
+
     private long download(Depot.Package pkg, File part, Callback cb)
             throws Exception {
         final URL u = new URL(pkg.url());
@@ -322,7 +337,12 @@ public final class PackageInstaller {
 
         try {
             final int code = conn.getResponseCode();
-            if (code != HttpURLConnection.HTTP_OK) {
+            // 206 is Partial Content and it is a success: a body arrives and the
+            // length check below still has to pass, so a genuinely short read is
+            // caught there rather than here. Some CDNs answer 206 to a plain GET,
+            // and treating it as a failure refused a download that had worked.
+            if (code != HttpURLConnection.HTTP_OK
+                    && code != HttpURLConnection.HTTP_PARTIAL) {
                 // Everything about the response, because a bare code has not
                 // been enough to explain the 204s seen in the field: the same
                 // URL serves 200 with the right length from a desktop JVM.
@@ -341,8 +361,14 @@ public final class PackageInstaller {
                 throw explain(code);
             }
 
+            // On a 206 the Content-Length describes the range, not the file, so
+            // it would show progress against the wrong total. The package's own
+            // size is preferred anyway; this only matters when it has none.
             final long total = pkg.bytes() > 0
-                    ? pkg.bytes() : conn.getContentLength();
+                    ? pkg.bytes()
+                    : (code == HttpURLConnection.HTTP_PARTIAL
+                            ? totalFromContentRange(conn)
+                            : conn.getContentLength());
 
             long done = 0;
             long lastPost = 0;

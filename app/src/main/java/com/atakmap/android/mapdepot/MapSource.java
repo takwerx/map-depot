@@ -42,13 +42,15 @@ public interface MapSource {
     String childPath(String parentPath, Entry child);
 
     /**
-     * The exact byte count for a file, which not every source's listing gives.
+     * The exact byte count for a posting, which not every source's listing gives.
      *
-     * {@link PackageInstaller} treats a length mismatch as a corrupt download,
-     * so a source whose listing rounds (Apache prints "4.6M") must answer this
-     * from somewhere better. Zero is a valid answer and means "do not check".
+     * {@link PackageInstaller} treats a length mismatch as a corrupt download, so
+     * a source whose listing rounds (Apache prints "4.6M") must answer this from
+     * somewhere better -- and one whose listing is already exact should answer
+     * with what it has rather than throwing it away. Zero means "do not check",
+     * and costs the free-space estimate too, so it is a last resort.
      */
-    void exactSize(String url, SizeCallback cb);
+    void exactSize(Posting posting, SizeCallback cb);
 
     /**
      * Turns one folder's entries into installable maps, all at once.

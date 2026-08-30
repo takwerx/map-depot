@@ -176,7 +176,9 @@ public final class NifcClient implements MapSource {
      * length check rather than fail a download over a missing header.
      */
     @Override
-    public void exactSize(final String url, final MapSource.SizeCallback cb) {
+    public void exactSize(final MapSource.Posting posting,
+            final MapSource.SizeCallback cb) {
+        final String url = posting.url();
         worker.execute(new Runnable() {
             @Override
             public void run() {
