@@ -63,8 +63,17 @@
             android:id="@+id/btn_nifc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
             android:minHeight="72dp"
             android:text="@string/nifc_heading" />
+
+        <Button
+            style="@style/TakwerxButton"
+            android:id="@+id/btn_uaswfc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="72dp"
+            android:text="@string/uaswfc_heading" />
 
         <TextView
             android:id="@+id/home_note"

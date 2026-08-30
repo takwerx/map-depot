@@ -58,7 +58,7 @@ import java.util.regex.Pattern;
  * rounded size there would fail every download. {@link #exactSize} asks the
  * server for the real {@code Content-Length} first.
  */
-public final class NifcClient {
+public final class NifcClient implements MapSource {
 
     public static final String TAG = "MapDepotNifc";
 
@@ -96,62 +96,25 @@ public final class NifcClient {
     /** A fire's folder is year-prefixed: {@code 2026_RoweCreekComplex}. */
     private static final Pattern YEAR_PREFIXED = Pattern.compile("^\\d{4}[_\\-].+");
 
-    /** What the plugin will install. Everything else is not offered. */
-    private static final Pattern MAP_FILE = Pattern
-            .compile(".*\\.(pdf|kmz)$", Pattern.CASE_INSENSITIVE);
-
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
 
+    @Override
+    public String id() {
+        return "nifc";
+    }
+
+    @Override
+    public String label() {
+        return "NIFC FTP";
+    }
+
+    @Override
     public void shutdown() {
         worker.shutdownNow();
     }
 
     // ----------------------------------------------------------------- model
-
-    /** One entry in a listing: either a folder to walk into or a file to fetch. */
-    public static final class Entry {
-        /** Decoded, for reading. */
-        public final String name;
-        /** Encoded exactly as the server wrote it, for building the next URL. */
-        public final String href;
-        public final boolean directory;
-        /** {@code 2026-08-28 03:28}, or empty. */
-        public final String modified;
-        /** Approximate, from the listing. Zero for a directory or when unknown. */
-        public final long approxBytes;
-
-        Entry(String name, String href, boolean directory, String modified,
-                long approxBytes) {
-            this.name = name;
-            this.href = href;
-            this.directory = directory;
-            this.modified = modified;
-            this.approxBytes = approxBytes;
-        }
-
-        public boolean isMap() {
-            return !directory && MAP_FILE.matcher(name).matches();
-        }
-    }
-
-    public interface ListingCallback {
-        /**
-         * @param path the encoded path listed, relative to the root
-         * @param entries folders first, then files, each already sorted
-         * @param hidden how many entries were dropped for not being maps, so the
-         *        panel can say so rather than quietly showing less than is there
-         */
-        void onListing(String path, List<Entry> entries, int hidden);
-
-        void onError(String message);
-    }
-
-    public interface SizeCallback {
-        void onSize(long bytes);
-
-        void onError(String message);
-    }
 
     // ------------------------------------------------------------------- API
 
@@ -173,17 +136,18 @@ public final class NifcClient {
      * @param path encoded path relative to the root, empty for the top, always
      *        ending in {@code /}
      */
-    public void list(final String path, final ListingCallback cb) {
+    @Override
+    public void list(final String path, final MapSource.ListingCallback cb) {
         worker.execute(new Runnable() {
             @Override
             public void run() {
                 try {
                     final String body = get(root() + path);
-                    final List<Entry> all = parse(body);
+                    final List<MapSource.Entry> all = parse(body);
 
-                    final List<Entry> keep = new ArrayList<>();
+                    final List<MapSource.Entry> keep = new ArrayList<>();
                     int hidden = 0;
-                    for (final Entry e : all) {
+                    for (final MapSource.Entry e : all) {
                         if (e.directory || e.isMap())
                             keep.add(e);
                         else
@@ -205,7 +169,8 @@ public final class NifcClient {
      * {@link PackageInstaller} to skip both the free-space estimate and the
      * length check rather than fail a download over a missing header.
      */
-    public void exactSize(final String url, final SizeCallback cb) {
+    @Override
+    public void exactSize(final String url, final MapSource.SizeCallback cb) {
         worker.execute(new Runnable() {
             @Override
             public void run() {
@@ -256,12 +221,12 @@ public final class NifcClient {
      *
      * @param children the folder's own entries, already listed
      */
-    public static boolean looksLikeIncident(String name, List<Entry> children) {
+    public static boolean looksLikeIncident(String name, List<MapSource.Entry> children) {
         if (name == null || !YEAR_PREFIXED.matcher(strip(name)).matches())
             return false;
         if (children == null)
             return true;
-        for (final Entry c : children) {
+        for (final MapSource.Entry c : children) {
             if (c.directory && YEAR_PREFIXED.matcher(strip(c.name)).matches())
                 return false;
         }
@@ -299,9 +264,9 @@ public final class NifcClient {
      * dropped rather than followed, so a browse can never walk off the server it
      * was pointed at.
      */
-    static List<Entry> parse(String body) {
-        final List<Entry> dirs = new ArrayList<>();
-        final List<Entry> files = new ArrayList<>();
+    static List<MapSource.Entry> parse(String body) {
+        final List<MapSource.Entry> dirs = new ArrayList<>();
+        final List<MapSource.Entry> files = new ArrayList<>();
 
         final Matcher m = ROW.matcher(body);
         while (m.find()) {
@@ -318,15 +283,15 @@ public final class NifcClient {
             if (name.isEmpty() || ".".equals(name) || "..".equals(name))
                 continue;
 
-            final Entry e = new Entry(name, href, dir, modified,
-                    dir ? 0L : parseSize(size));
+            final MapSource.Entry e = new MapSource.Entry(name, href, dir,
+                    modified, dir ? 0L : parseSize(size), "");
             if (dir)
                 dirs.add(e);
             else
                 files.add(e);
         }
 
-        final List<Entry> out = new ArrayList<>(dirs.size() + files.size());
+        final List<MapSource.Entry> out = new ArrayList<>(dirs.size() + files.size());
         out.addAll(dirs);
         out.addAll(files);
         return out;
@@ -440,8 +405,8 @@ public final class NifcClient {
         }
     }
 
-    private void postListing(final ListingCallback cb, final String path,
-            final List<Entry> entries, final int hidden) {
+    private void postListing(final MapSource.ListingCallback cb, final String path,
+            final List<MapSource.Entry> entries, final int hidden) {
         main.post(new Runnable() {
             @Override
             public void run() {
@@ -450,7 +415,7 @@ public final class NifcClient {
         });
     }
 
-    private void postError(final ListingCallback cb, final String msg) {
+    private void postError(final MapSource.ListingCallback cb, final String msg) {
         main.post(new Runnable() {
             @Override
             public void run() {
@@ -467,91 +432,6 @@ public final class NifcClient {
     // -------------------------------------------------------------- postings
 
     /**
-     * One downloadable map, dressed as a {@link Depot.Package} so it goes through
-     * exactly the installer the forest maps do -- staging outside the scanned
-     * tree, a free-space check, an atomic rename into place and, crucially,
-     * {@code announce()}, which hands the file to ATAK's import pipeline. A file
-     * merely copied into {@code grg/} is invisible until the next ATAK restart,
-     * because the GRG discovery thread runs once at startup and never looks again.
-     */
-    public static final class Posting implements Depot.Package {
-
-        private final String url;
-        private final String originalName;
-        private final String installName;
-        private final String detail;
-        private long bytes;
-
-        public Posting(String url, String originalName, String installName,
-                long bytes, String detail) {
-            this.url = url;
-            this.originalName = originalName;
-            this.installName = installName;
-            this.bytes = bytes;
-            this.detail = detail;
-        }
-
-        /** Set once the real Content-Length is known. */
-        public void setBytes(long b) {
-            bytes = Math.max(0L, b);
-        }
-
-        public String originalName() {
-            return originalName;
-        }
-
-        @Override
-        public String id() {
-            return "nifc:" + url;
-        }
-
-        @Override
-        public String name() {
-            return installName;
-        }
-
-        @Override
-        public String url() {
-            return url;
-        }
-
-        @Override
-        public String fileName() {
-            return installName;
-        }
-
-        @Override
-        public String legacyFileName() {
-            // Nothing shipped under an earlier name, so there is nothing to
-            // supersede. Returning the current name makes the installer's
-            // cleanup a no-op rather than a delete of something else.
-            return installName;
-        }
-
-        /**
-         * A GeoPDF is a GRG: an overlay that composites over whatever base map is
-         * already up, rather than a base map you switch to. A KMZ is an overlay
-         * in ATAK's own sense and goes where ATAK puts imported ones.
-         */
-        @Override
-        public String destination() {
-            return installName.toLowerCase(Locale.US).endsWith(".kmz")
-                    ? "overlays"
-                    : "grg";
-        }
-
-        @Override
-        public long bytes() {
-            return bytes;
-        }
-
-        @Override
-        public String describe() {
-            return detail;
-        }
-    }
-
-    /**
      * Builds the postings for one listing in one go.
      *
      * Batched deliberately: {@link NifcNaming#translateAll} can only guarantee
@@ -559,13 +439,14 @@ public final class NifcClient {
      * once. Translating one file at a time silently loses maps -- one IR date
      * carries ten PDFs that differ only by area and rendering.
      */
-    public static List<Posting> postingsFor(List<Entry> entries,
+    @Override
+    public List<MapSource.Posting> postingsFor(List<MapSource.Entry> entries,
             String basePath, String decodedPath) {
 
         final List<String> names = new ArrayList<>();
         final Map<String, String> modified = new LinkedHashMap<>();
-        final Map<String, Entry> byName = new LinkedHashMap<>();
-        for (final Entry e : entries) {
+        final Map<String, MapSource.Entry> byName = new LinkedHashMap<>();
+        for (final MapSource.Entry e : entries) {
             if (!e.isMap())
                 continue;
             names.add(e.name);
@@ -578,14 +459,14 @@ public final class NifcClient {
         final Map<String, String> translated = NifcNaming.translateAll(
                 names, incident, below, modified);
 
-        final List<Posting> out = new ArrayList<>();
+        final List<MapSource.Posting> out = new ArrayList<>();
         for (final Map.Entry<String, String> t : translated.entrySet()) {
-            final Entry e = byName.get(t.getKey());
+            final MapSource.Entry e = byName.get(t.getKey());
             if (e == null)
                 continue;
-            out.add(new Posting(root() + basePath + e.href, e.name,
-                    t.getValue(), e.approxBytes,
-                    Depot.bytes(e.approxBytes) + "  ·  " + e.name));
+            out.add(new MapSource.Posting(root() + basePath + e.href, e.name,
+                    t.getValue(), e.bytes,
+                    Depot.bytes(e.bytes) + "  ·  " + e.name));
         }
         return out;
     }

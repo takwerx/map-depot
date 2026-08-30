@@ -1,0 +1,194 @@
+
+package com.atakmap.android.mapdepot;
+
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
+
+/**
+ * A browsable archive of incident maps.
+ *
+ * Two of them now -- NIFC's Apache listing and UASWFC's JSON API -- and they
+ * have nothing in common on the wire: one is scraped HTML with rounded sizes,
+ * the other is JSON with exact ones. What they do share is everything the
+ * operator sees: walk folders, read what a map will cost, tick it, have it land
+ * in ATAK. So the browser and the installer are written once against this, and
+ * each source is only responsible for turning its own server into these types.
+ *
+ * A source is expected to hide what is not a map -- geodatabases, shapefile
+ * bundles, flight logs -- and to report how many it hid, because a panel that
+ * silently shows less than is there reads as a panel that is broken.
+ */
+public interface MapSource {
+
+    /** Stable identifier, used to key the remembered starting folder. */
+    String id();
+
+    /** What the landing button and the panel call this archive. */
+    String label();
+
+    /** Lists one folder. {@code path} is source-specific and opaque to callers. */
+    void list(String path, ListingCallback cb);
+
+    /**
+     * The exact byte count for a file, which not every source's listing gives.
+     *
+     * {@link PackageInstaller} treats a length mismatch as a corrupt download,
+     * so a source whose listing rounds (Apache prints "4.6M") must answer this
+     * from somewhere better. Zero is a valid answer and means "do not check".
+     */
+    void exactSize(String url, SizeCallback cb);
+
+    /**
+     * Turns one folder's entries into installable maps, all at once.
+     *
+     * Batched rather than per-file because that is the only way to guarantee two
+     * files do not land on the same name: one IR date carries several products
+     * that differ solely by a qualifier, and per-file naming loses all but the
+     * last of them.
+     */
+    List<Posting> postingsFor(List<Entry> entries, String path,
+            String decodedPath);
+
+    void shutdown();
+
+    // ------------------------------------------------------------------ types
+
+    /** What the plugin will install. Everything else is not offered. */
+    Pattern MAP_FILE = Pattern.compile(".*\\.(pdf|kmz)$",
+            Pattern.CASE_INSENSITIVE);
+
+    /** One row of a listing: a folder to walk into, or a file to fetch. */
+    final class Entry {
+        /** Decoded, for reading. */
+        public final String name;
+        /** Whatever the source needs to build the next request from. */
+        public final String href;
+        public final boolean directory;
+        /** A date the source knows for this entry, or empty. */
+        public final String modified;
+        /** Zero for a directory, or when the source does not say. */
+        public final long bytes;
+        /** The source's own classification, or empty. Advisory only. */
+        public final String kind;
+
+        public Entry(String name, String href, boolean directory,
+                String modified, long bytes, String kind) {
+            this.name = name;
+            this.href = href;
+            this.directory = directory;
+            this.modified = modified;
+            this.bytes = bytes;
+            this.kind = kind == null ? "" : kind;
+        }
+
+        public boolean isMap() {
+            return !directory && MAP_FILE.matcher(name).matches();
+        }
+    }
+
+    interface ListingCallback {
+        /**
+         * @param path the folder that was listed, echoed back so a reply that
+         *        arrives after the operator has moved on can be discarded
+         * @param entries folders first, then files
+         * @param hidden how many entries were dropped for not being maps, so the
+         *        panel can say so rather than quietly showing less than is there
+         */
+        void onListing(String path, List<Entry> entries, int hidden);
+
+        void onError(String message);
+    }
+
+    interface SizeCallback {
+        void onSize(long bytes);
+
+        void onError(String message);
+    }
+
+    /**
+     * One downloadable map, dressed as a {@link Depot.Package} so it goes
+     * through exactly the installer the forest maps do -- staging outside the
+     * scanned tree, a free-space check, an atomic rename into place and,
+     * crucially, {@code announce()}, which hands the file to ATAK's import
+     * pipeline. A file merely copied into {@code grg/} is invisible until the
+     * next ATAK restart, because the GRG discovery thread runs once at startup
+     * and never looks again.
+     */
+    final class Posting implements Depot.Package {
+
+        private final String url;
+        private final String originalName;
+        private final String installName;
+        private final String detail;
+        private long bytes;
+
+        public Posting(String url, String originalName, String installName,
+                long bytes, String detail) {
+            this.url = url;
+            this.originalName = originalName;
+            this.installName = installName;
+            this.bytes = bytes;
+            this.detail = detail;
+        }
+
+        /** Set once the real Content-Length is known. */
+        public void setBytes(long b) {
+            bytes = Math.max(0L, b);
+        }
+
+        public String originalName() {
+            return originalName;
+        }
+
+        @Override
+        public String id() {
+            return url;
+        }
+
+        @Override
+        public String name() {
+            return installName;
+        }
+
+        @Override
+        public String url() {
+            return url;
+        }
+
+        @Override
+        public String fileName() {
+            return installName;
+        }
+
+        @Override
+        public String legacyFileName() {
+            // Nothing shipped under an earlier name, so there is nothing to
+            // supersede. Returning the current name makes the installer's
+            // cleanup a no-op rather than a delete of something else.
+            return installName;
+        }
+
+        /**
+         * A GeoPDF is a GRG: an overlay that composites over whatever base map
+         * is already up, rather than a base map you switch to. A KMZ is an
+         * overlay in ATAK's own sense and goes where ATAK puts imported ones.
+         */
+        @Override
+        public String destination() {
+            return installName.toLowerCase(Locale.US).endsWith(".kmz")
+                    ? "overlays"
+                    : "grg";
+        }
+
+        @Override
+        public long bytes() {
+            return bytes;
+        }
+
+        @Override
+        public String describe() {
+            return detail;
+        }
+    }
+}

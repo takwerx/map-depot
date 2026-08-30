@@ -25,7 +25,9 @@ import com.atakmap.android.maps.MapView;
 import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
+import com.atakmap.android.mapdepot.MapSource;
 import com.atakmap.android.mapdepot.NifcClient;
+import com.atakmap.android.mapdepot.UaswfcClient;
 import com.atakmap.android.mapdepot.PackageInstaller;
 import com.atakmap.android.mapdepot.RegionInstaller;
 import com.atakmap.coremap.log.Log;
@@ -176,6 +178,11 @@ public class MapDepot implements IPlugin {
     // floor it stops at, so Back leaves the browser rather than stranding the
     // operator at the top of the whole server.
     private NifcClient nifc;
+    private UaswfcClient uaswfc;
+
+    /** Whichever archive the browser is currently showing. */
+    private MapSource source;
+
     private View nifcView;
     private ListView nifcList;
     private TextView nifcStatus;
@@ -195,7 +202,14 @@ public class MapDepot implements IPlugin {
     private final Set<String> nifcInstalled = new HashSet<>();
 
     /** Survives a plugin reload only on the host context -- see loadGacc(). */
-    private static final String PREF_GACC = "mapdepot_nifc_gacc";
+    /**
+     * Keyed per source, because the two archives do not cover the same ground:
+     * NIFC has all eleven GACCs and UASWFC currently only pacific_nw, so one
+     * remembered folder cannot serve both.
+     */
+    private String prefGaccKey() {
+        return "mapdepot_gacc_" + (source == null ? "nifc" : source.id());
+    }
 
     public MapDepot(IServiceController serviceController) {
         this.serviceController = serviceController;
@@ -477,7 +491,19 @@ public class MapDepot implements IPlugin {
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        showNifc();
+                        if (nifc == null)
+                            nifc = new NifcClient();
+                        showSource(nifc);
+                    }
+                });
+
+        root.findViewById(R.id.btn_uaswfc).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (uaswfc == null)
+                            uaswfc = new UaswfcClient();
+                        showSource(uaswfc);
                     }
                 });
 
@@ -1407,15 +1433,25 @@ public class MapDepot implements IPlugin {
      * geographic area for a whole assignment -- but it is a button, not a
      * one-time setting, because the next fire may be somewhere else.
      */
-    private void showNifc() {
+    private void showSource(MapSource wanted) {
         homeView.setVisibility(View.GONE);
         dtedView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.GONE);
         nifcView.setVisibility(View.VISIBLE);
 
-        if (nifc == null)
-            nifc = new NifcClient();
+        // Switching archives starts over: the two do not share a path, and a
+        // half-walked NIFC folder means nothing to UASWFC.
+        final boolean switched = source == null
+                || !source.id().equals(wanted.id());
+        source = wanted;
+        if (switched) {
+            nifcStack.clear();
+            gaccPaths.clear();
+            gaccLabels.clear();
+            nifcRows.clear();
+            nifcAdapter.notifyDataSetChanged();
+        }
 
         if (!nifcStack.isEmpty())
             return;
@@ -1441,13 +1477,13 @@ public class MapDepot implements IPlugin {
      */
     private void loadGaccList(final boolean thenPrompt) {
         nifcStatus.setText(R.string.nifc_loading);
-        nifc.list("", new NifcClient.ListingCallback() {
+        source.list("", new MapSource.ListingCallback() {
             @Override
-            public void onListing(String path, List<NifcClient.Entry> entries,
+            public void onListing(String path, List<MapSource.Entry> entries,
                     int hidden) {
                 gaccPaths.clear();
                 gaccLabels.clear();
-                for (final NifcClient.Entry e : entries) {
+                for (final MapSource.Entry e : entries) {
                     if (!e.directory)
                         continue;
                     gaccPaths.add(e.href);
@@ -1519,9 +1555,9 @@ public class MapDepot implements IPlugin {
         nifcAdapter.notifyDataSetChanged();
         nifcStatus.setText(R.string.nifc_loading);
 
-        nifc.list(encodedPath, new NifcClient.ListingCallback() {
+        source.list(encodedPath, new MapSource.ListingCallback() {
             @Override
-            public void onListing(String path, List<NifcClient.Entry> entries,
+            public void onListing(String path, List<MapSource.Entry> entries,
                     int hidden) {
                 // A listing that arrives after the operator has moved on is not
                 // an error, but it must not overwrite where they are now.
@@ -1529,12 +1565,11 @@ public class MapDepot implements IPlugin {
                     return;
 
                 nifcRows.clear();
-                for (final NifcClient.Entry e : entries) {
+                for (final MapSource.Entry e : entries) {
                     if (e.directory)
                         nifcRows.add(e);
                 }
-                nifcRows.addAll(NifcClient.postingsFor(entries, path,
-                        decodedPath));
+                nifcRows.addAll(source.postingsFor(entries, path, decodedPath));
                 nifcAdapter.notifyDataSetChanged();
                 nifcList.setSelectionAfterHeaderView();
                 describeListing(hidden);
@@ -1557,7 +1592,7 @@ public class MapDepot implements IPlugin {
     private void describeListing(int hidden) {
         int folders = 0, maps = 0;
         for (final Object o : nifcRows) {
-            if (o instanceof NifcClient.Entry)
+            if (o instanceof MapSource.Entry)
                 folders++;
             else
                 maps++;
@@ -1602,13 +1637,13 @@ public class MapDepot implements IPlugin {
      * installer treats a length mismatch as a corrupt download -- so handing it
      * the rounded figure would fail every install.
      */
-    private void confirmAndInstallPosting(final NifcClient.Posting posting) {
+    private void confirmAndInstallPosting(final MapSource.Posting posting) {
         if (activePostingId != null) {
             toast("Already downloading — let it finish first.");
             return;
         }
         nifcStatus.setText("Checking size…");
-        nifc.exactSize(posting.url(), new NifcClient.SizeCallback() {
+        source.exactSize(posting.url(), new MapSource.SizeCallback() {
             @Override
             public void onSize(long bytes) {
                 posting.setBytes(bytes);
@@ -1627,7 +1662,7 @@ public class MapDepot implements IPlugin {
         });
     }
 
-    private void promptForPosting(final NifcClient.Posting posting, long bytes) {
+    private void promptForPosting(final MapSource.Posting posting, long bytes) {
         final String size = bytes > 0 ? Depot.bytes(bytes) : "an unknown size";
         new AlertDialog.Builder(hostContext())
                 .setTitle(posting.name())
@@ -1644,7 +1679,7 @@ public class MapDepot implements IPlugin {
                 .show();
     }
 
-    private void installPosting(final NifcClient.Posting posting) {
+    private void installPosting(final MapSource.Posting posting) {
         activePostingId = posting.id();
         nifcStatus.setText("Getting " + posting.name() + "…");
         cancelBarNifc.setVisibility(View.VISIBLE);
@@ -1695,7 +1730,7 @@ public class MapDepot implements IPlugin {
             return null;
         return android.preference.PreferenceManager
                 .getDefaultSharedPreferences(mv.getContext())
-                .getString(PREF_GACC, null);
+                .getString(prefGaccKey(), null);
     }
 
     /**
@@ -1709,7 +1744,7 @@ public class MapDepot implements IPlugin {
             return;
         android.preference.PreferenceManager
                 .getDefaultSharedPreferences(mv.getContext())
-                .edit().putString(PREF_GACC, path).apply();
+                .edit().putString(prefGaccKey(), path).apply();
     }
 
     private String labelForPath(String path) {
@@ -1774,8 +1809,8 @@ public class MapDepot implements IPlugin {
             final ProgressBar bar = row.findViewById(R.id.region_progress);
             bar.setVisibility(View.GONE);
 
-            if (item instanceof NifcClient.Entry) {
-                final NifcClient.Entry e = (NifcClient.Entry) item;
+            if (item instanceof MapSource.Entry) {
+                final MapSource.Entry e = (MapSource.Entry) item;
                 name.setText(e.name);
                 detail.setText("Folder");
                 action.setVisibility(View.GONE);
@@ -1789,7 +1824,7 @@ public class MapDepot implements IPlugin {
                 return row;
             }
 
-            final NifcClient.Posting posting = (NifcClient.Posting) item;
+            final MapSource.Posting posting = (MapSource.Posting) item;
             final boolean done = nifcInstalled.contains(posting.id());
             name.setText(posting.name());
             detail.setText(posting.describe());
