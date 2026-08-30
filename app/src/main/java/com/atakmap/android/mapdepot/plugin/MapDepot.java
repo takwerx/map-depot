@@ -25,6 +25,7 @@ import com.atakmap.android.maps.MapView;
 import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
+import com.atakmap.android.mapdepot.InstalledIndex;
 import com.atakmap.android.mapdepot.MapSource;
 import com.atakmap.android.mapdepot.NifcClient;
 import com.atakmap.android.mapdepot.UaswfcClient;
@@ -1626,7 +1627,21 @@ public class MapDepot implements IPlugin {
      */
     private void applyNifcFilter() {
         nifcRows.clear();
-        int installed = 0, available = 0;
+
+        // Everything installed at or below where the operator is standing, so
+        // the top of an archive shows the lot and it narrows as they walk down.
+        // A fire's folder is mostly subfolders, so without this "Installed" had
+        // nothing to count and showed an empty list beside a full device.
+        final List<InstalledIndex.Record> below = InstalledIndex.under(
+                source == null ? null : source.id(), nifcDecodedPath);
+
+        final java.util.Set<String> indexed = new HashSet<>();
+        for (final InstalledIndex.Record r : below)
+            indexed.add(InstalledIndex.lower(r.installName));
+
+        int installed = below.size(), available = 0;
+        final java.util.Set<String> listedHere = new HashSet<>();
+
         for (final Object o : nifcAllRows) {
             if (o instanceof MapSource.Entry) {
                 nifcRows.add(o);
@@ -1634,14 +1649,32 @@ public class MapDepot implements IPlugin {
             }
             final MapSource.Posting posting = (MapSource.Posting) o;
             final boolean have = nifcInstalled.contains(posting.id());
-            if (have)
-                installed++;
-            else
+            if (have) {
+                listedHere.add(InstalledIndex.lower(posting.name()));
+                // Downloaded before the index existed, so it is on the device
+                // but not remembered. Counted here rather than going missing.
+                if (!indexed.contains(InstalledIndex.lower(posting.name())))
+                    installed++;
+            } else {
                 available++;
+            }
             if (nifcShown == Shown.ALL
                     || (nifcShown == Shown.INSTALLED && have)
                     || (nifcShown == Shown.AVAILABLE && !have))
                 nifcRows.add(posting);
+        }
+
+        // The installed maps from deeper folders, which this listing has no rows
+        // for. Shown with the folder they came from rather than a size, since
+        // that is what tells two days of the same fire apart.
+        if (nifcShown == Shown.INSTALLED) {
+            for (final InstalledIndex.Record r : below) {
+                if (listedHere.contains(InstalledIndex.lower(r.installName)))
+                    continue;
+                final MapSource.Posting rebuilt = InstalledIndex.toPosting(r);
+                nifcInstalled.add(rebuilt.id());
+                nifcRows.add(rebuilt);
+            }
         }
 
         final int count = nifcShown == Shown.INSTALLED ? installed
@@ -1849,6 +1882,7 @@ public class MapDepot implements IPlugin {
             @Override
             public void onRemoved(Depot.Package p) {
                 nifcInstalled.remove(p.id());
+                InstalledIndex.remove(posting.name(), posting.destination());
                 applyNifcFilter();
                 nifcStatus.setText(p.name() + " removed.");
             }
@@ -1885,6 +1919,12 @@ public class MapDepot implements IPlugin {
                 nifcDone = nifcTotal = 0;
                 cancelBarNifc.setVisibility(View.GONE);
                 nifcInstalled.add(p.id());
+                // Written down here because the file itself cannot say where it
+                // came from: grg/ is flat and holds only a name.
+                InstalledIndex.add(new InstalledIndex.Record(
+                        source.id(), nifcDecodedPath, posting.url(),
+                        posting.originalName(), posting.name(),
+                        posting.destination(), posting.bytes()));
                 applyNifcFilter();
                 nifcStatus.setText(p.name()
                         + " installed — tap it to go there.");
