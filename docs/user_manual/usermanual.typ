@@ -249,6 +249,24 @@ radio can still be found.
 ]
 
 #tak-slide[
+== Pinning the fire you are working
+
+A crew assigned to a fire opens the same folder twenty times a day, and reaching
+it means a region, a year folder, the fire and then a product folder -- four taps
+to arrive somewhere they never leave.
+
+#v(6pt)
+Every folder has a *Pin* button. Press it on your fire and it sits at the top of
+the first screen from then on, one tap away. *Remove* on a pinned row unpins it
+and deletes nothing.
+
+#v(6pt)
+Anything can be pinned, not only a fire: if you live in one product folder, pin
+that and you land straight in it. Pins survive a restart and a plugin update, and
+the two archives keep their own.
+]
+
+#tak-slide[
 == Working with what you have downloaded
 
 #v(6pt)

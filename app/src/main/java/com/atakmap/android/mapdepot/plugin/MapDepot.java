@@ -30,6 +30,7 @@ import com.atakmap.android.mapdepot.MapSource;
 import com.atakmap.android.mapdepot.NifcClient;
 import com.atakmap.android.mapdepot.UaswfcClient;
 import com.atakmap.android.mapdepot.PackageInstaller;
+import com.atakmap.android.mapdepot.Pinned;
 import com.atakmap.android.mapdepot.RegionInstaller;
 import com.atakmap.coremap.log.Log;
 
@@ -1614,6 +1615,17 @@ public class MapDepot implements IPlugin {
                     return;
 
                 nifcAllRows.clear();
+
+                // Pinned fires ride at the top of the first screen only. Deeper
+                // in, the operator has already arrived somewhere and a shortcut
+                // back to the top of a different fire is just noise.
+                if (nifcStack.isEmpty()) {
+                    for (final Pinned.Entry pin : Pinned.all(source.id())) {
+                        if (!pin.path.equals(path))
+                            nifcAllRows.add(pin);
+                    }
+                }
+
                 final List<MapSource.Entry> folders = new ArrayList<>();
                 for (final MapSource.Entry e : entries) {
                     if (e.directory)
@@ -1727,7 +1739,9 @@ public class MapDepot implements IPlugin {
         final java.util.Set<String> listedHere = new HashSet<>();
 
         for (final Object o : nifcAllRows) {
-            if (o instanceof MapSource.Entry) {
+            // Folders and pins are how the operator gets anywhere. Neither is
+            // installed or available, so neither is ever filtered out.
+            if (o instanceof MapSource.Entry || o instanceof Pinned.Entry) {
                 nifcRows.add(o);
                 continue;
             }
@@ -1778,9 +1792,11 @@ public class MapDepot implements IPlugin {
      * holding two files.
      */
     private void describeListing(int hidden) {
-        int folders = 0, maps = 0;
+        int folders = 0, maps = 0, pins = 0;
         for (final Object o : nifcRows) {
-            if (o instanceof MapSource.Entry)
+            if (o instanceof Pinned.Entry)
+                pins++;
+            else if (o instanceof MapSource.Entry)
                 folders++;
             else
                 maps++;
@@ -1794,7 +1810,7 @@ public class MapDepot implements IPlugin {
             // filter is hiding all of it. Say which it is, and how to undo it.
             int filteredOut = 0;
             for (final Object o : nifcAllRows) {
-                if (!(o instanceof MapSource.Entry))
+                if (o instanceof MapSource.Posting)
                     filteredOut++;
             }
             if (filteredOut > 0 && nifcShown != Shown.ALL) {
@@ -2193,16 +2209,63 @@ public class MapDepot implements IPlugin {
             bar.setVisibility(View.GONE);
             eye.setVisibility(View.GONE);
 
-            if (item instanceof MapSource.Entry) {
-                final MapSource.Entry e = (MapSource.Entry) item;
-                name.setText(e.name);
-                detail.setText("Folder");
-                action.setVisibility(View.GONE);
+            if (item instanceof Pinned.Entry) {
+                // A pinned fire, shown at the top of the source. It jumps
+                // straight to the folder rather than walking down to it.
+                final Pinned.Entry pin = (Pinned.Entry) item;
+                name.setText(pretty(pin.label));
+                detail.setText("Pinned");
+                action.setVisibility(View.VISIBLE);
+                action.setEnabled(true);
+                action.setText(pluginContext.getString(R.string.remove));
+                action.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        Pinned.unpin(pin.sourceId, pin.path);
+                        browse(nifcPath, nifcDecodedPath, Nav.BACK);
+                    }
+                });
                 row.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        browse(source.childPath(nifcPath, e),
-                                join(nifcDecodedPath, e.name), Nav.DESCEND);
+                        browse(pin.path, pin.decodedPath, Nav.DESCEND);
+                    }
+                });
+                return row;
+            }
+
+            if (item instanceof MapSource.Entry) {
+                final MapSource.Entry e = (MapSource.Entry) item;
+                final String childPath = source.childPath(nifcPath, e);
+                final String childDecoded = join(nifcDecodedPath, e.name);
+                final boolean isPinned = Pinned.isPinned(source.id(), childPath);
+
+                name.setText(pretty(e.name));
+                detail.setText("Folder");
+
+                // Pin lives on the folder row because that is where the operator
+                // is looking when they decide this is the fire they are working.
+                action.setVisibility(View.VISIBLE);
+                action.setEnabled(true);
+                action.setText(pluginContext.getString(
+                        isPinned ? R.string.pinned : R.string.pin));
+                action.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (isPinned)
+                            Pinned.unpin(source.id(), childPath);
+                        else
+                            Pinned.pin(new Pinned.Entry(source.id(), childPath,
+                                    childDecoded,
+                                    Pinned.labelFor(childDecoded)));
+                        nifcAdapter.notifyDataSetChanged();
+                    }
+                });
+
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        browse(childPath, childDecoded, Nav.DESCEND);
                     }
                 });
                 return row;
