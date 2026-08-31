@@ -199,6 +199,13 @@ public class MapDepot implements IPlugin {
     private Button forestOutlines;
     private Shown nifcShown = Shown.ALL;
 
+    /**
+     * The row text colour as ATAK's theme sets it, taken from the first row
+     * inflated. A recycled row that was a pin has to be put back to this, and
+     * hardcoding white would quietly change every other row's appearance.
+     */
+    private android.content.res.ColorStateList rowTextColor;
+
     /** Progress for the row currently downloading, so it shows on the row. */
     private long nifcDone, nifcTotal;
 
@@ -2209,12 +2216,24 @@ public class MapDepot implements IPlugin {
             bar.setVisibility(View.GONE);
             eye.setVisibility(View.GONE);
 
+            // Rows are recycled, so a colour set on one has to be taken off the
+            // next -- otherwise a folder inherits the cyan of a pin that used to
+            // occupy the same view.
+            if (rowTextColor == null)
+                rowTextColor = name.getTextColors();
+            name.setTextColor(rowTextColor);
+            detail.setTextColor(rowTextColor);
+
             if (item instanceof Pinned.Entry) {
                 // A pinned fire, shown at the top of the source. It jumps
                 // straight to the folder rather than walking down to it.
                 final Pinned.Entry pin = (Pinned.Entry) item;
+                final int cyan = pluginContext.getResources()
+                        .getColor(R.color.pin_cyan);
                 name.setText(pretty(pin.label));
+                name.setTextColor(cyan);
                 detail.setText("Pinned");
+                detail.setTextColor(cyan);
                 action.setVisibility(View.VISIBLE);
                 action.setEnabled(true);
                 action.setText(pluginContext.getString(R.string.remove));
