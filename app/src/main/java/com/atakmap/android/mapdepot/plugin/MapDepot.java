@@ -248,7 +248,7 @@ public class MapDepot implements IPlugin {
                 pluginContext.getString(R.string.app_name),
                 MarshalManager.marshal(
                         pluginContext.getResources()
-                                .getDrawable(R.drawable.ic_launcher),
+                                .getDrawable(R.drawable.ic_toolbar),
                         android.graphics.drawable.Drawable.class,
                         gov.tak.api.commons.graphics.Bitmap.class))
                 .setListener(new ToolbarItemAdapter() {
@@ -291,7 +291,7 @@ public class MapDepot implements IPlugin {
                             pluginContext.getString(R.string.prefs_summary),
                             PREFS_KEY,
                             pluginContext.getResources().getDrawable(
-                                    R.drawable.ic_launcher),
+                                    R.drawable.ic_toolbar),
                             new MapDepotPreferenceFragment(pluginContext)));
         } catch (LinkageError | RuntimeException notThisBuild) {
             Log.w(TAG, "could not register preferences: " + notThisBuild);
