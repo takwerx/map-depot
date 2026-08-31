@@ -142,6 +142,17 @@ public final class NifcNaming {
             "port", "portrait", "land", "landscape"));
 
     /**
+     * A sheet size, however it is written, including the spellings that run the
+     * size and the orientation together: {@code 11x17land}, {@code 8x11port}.
+     * The vocabulary above only knows them apart, so
+     * {@code 20260830_Austin_IR_11x17land_Aerial.pdf} kept its paper size and
+     * came out as ...-IR-11X17LAND-AERIAL-...
+     */
+    private static final Pattern SHEET = Pattern.compile(
+            "^\\d{1,2}(x|by)\\d{1,2}(land|port|landscape|portrait)?$",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
      * How a raster was rendered, as opposed to which piece of ground it covers.
      * Kept, but ordered after the area: an operator looks for Crosswhite first
      * and only then decides between the ortho and the topo of it.
@@ -595,6 +606,16 @@ public final class NifcNaming {
 
     // ------------------------------------------------------------ rendering
 
+    /**
+     * The word that says what kind of thing this is. A PDF is a raster map and
+     * lands in {@code grg/}; a KMZ is a vector overlay and lands in
+     * {@code overlays/}. They behave differently on the map, so the name says
+     * which one an operator is about to get.
+     */
+    private static String kindWord(String ext) {
+        return "kmz".equals(ext) || "kml".equals(ext) ? "OVERLAY" : "MAP";
+    }
+
     private static String render(Parts p, boolean withTime) {
         final List<String> out = new ArrayList<>();
         if (p.state != null)
@@ -602,7 +623,7 @@ public final class NifcNaming {
         if (p.unit != null)
             out.add(p.unit);
         out.addAll(p.incident);
-        out.add("MAP");
+        out.add(kindWord(p.ext));
         out.addAll(p.type);
         out.addAll(p.areas);
         out.addAll(p.renders);
@@ -707,7 +728,7 @@ public final class NifcNaming {
                 continue;
             }
             afterArch = "arch".equals(t) || "ansi".equals(t);
-            if (SIZE.contains(t)) {
+            if (SIZE.contains(t) || SHEET.matcher(raw).matches()) {
                 p.size.add(raw);
                 continue;
             }

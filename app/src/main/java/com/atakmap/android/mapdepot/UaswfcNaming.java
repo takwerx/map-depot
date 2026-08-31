@@ -76,6 +76,15 @@ public final class UaswfcNaming {
             "port", "portrait", "land", "landscape"));
 
     /**
+     * A sheet size however it is written, including the spellings that run the
+     * size and the orientation together -- {@code 11x17land}, {@code 8x11port}.
+     * The set above only knows them apart, so those came through into the name.
+     */
+    private static final Pattern SHEET = Pattern.compile(
+            "^\\d{1,2}(x|by)\\d{1,2}(land|port|landscape|portrait)?$",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
      * The product. These are the words that decide what an operator is looking
      * at, so they are kept and ordered last before the dates.
      */
@@ -197,7 +206,8 @@ public final class UaswfcNaming {
             // which is authoritative; the filename's spelling of it is not.
             if (isIncidentWord(raw, p.incident))
                 continue;
-            if (SIZE.contains(t) || NOISE.contains(t))
+            if (SIZE.contains(t) || NOISE.contains(t)
+                    || SHEET.matcher(raw).matches())
                 continue;
             if (PRODUCT.contains(t)) {
                 p.product.add(raw);
@@ -215,9 +225,19 @@ public final class UaswfcNaming {
         return p;
     }
 
+    /**
+     * The word that says what kind of thing this is. A PDF is a raster map and
+     * lands in {@code grg/}; a KMZ is a vector overlay and lands in
+     * {@code overlays/}. They behave differently on the map, so the name says
+     * which one an operator is about to get.
+     */
+    private static String kindWord(String ext) {
+        return "kmz".equals(ext) || "kml".equals(ext) ? "OVERLAY" : "MAP";
+    }
+
     private static String render(Parts p) {
         final List<String> out = new ArrayList<>(p.incident);
-        out.add("MAP");
+        out.add(kindWord(p.ext));
         out.addAll(p.words);
         out.addAll(p.product);
         if (p.sortie != null)

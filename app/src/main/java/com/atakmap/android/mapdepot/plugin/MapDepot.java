@@ -756,7 +756,8 @@ public class MapDepot implements IPlugin {
                 shown.add(r);
             }
         if (regionFilter != null)
-            regionFilter.setText(labelFor(regionShown));
+            regionFilter.setText(pluginContext.getString(labelFor(regionShown))
+                    + " (" + shown.size() + ")");
         adapter.notifyDataSetChanged();
     }
 
@@ -1107,6 +1108,12 @@ public class MapDepot implements IPlugin {
                 activeRegionId = null;
                 progressById.remove(region.id);
                 completeById.add(region.id);
+                // The scan is the authority on this screen, and it was only
+                // being re-run after a removal -- so a state that had just
+                // finished downloading still read "N MB to download" beside its
+                // Remove button, and did not appear under the Installed filter
+                // until the plugin was reopened.
+                measureRegions();
                 adapter.notifyDataSetChanged();
                 status.setText(String.format(
                         "%s installed — %d cells added, %d already held.",
@@ -1226,7 +1233,8 @@ public class MapDepot implements IPlugin {
         if (!categories.isEmpty())
             categoryButton.setText(categories.get(categoryIndex) + "  \u25be");
 
-        basemapFilter.setText(labelFor(mapShown));
+        basemapFilter.setText(pluginContext.getString(labelFor(mapShown))
+                + " (" + shownMaps.size() + ")");
 
         shownMaps.clear();
         for (Depot.BaseMap m : allMaps) {
@@ -1337,7 +1345,8 @@ public class MapDepot implements IPlugin {
         refreshOutlinesButton();
         final String q = forestSearch.getText().toString().trim().toLowerCase();
 
-        packageFilter.setText(labelFor(packageShown));
+        packageFilter.setText(pluginContext.getString(labelFor(packageShown))
+                + " (" + shownPackages.size() + ")");
 
         shownPackages.clear();
         for (Depot.Package p : sourceList()) {
@@ -2014,6 +2023,31 @@ public class MapDepot implements IPlugin {
      * ends -- the scan takes as long as it takes. Say so, rather than letting
      * the tap look broken.
      */
+    /**
+     * Waits for ATAK to register a freshly installed map, then redraws the row.
+     *
+     * The Show/Hide control is only offered once ATAK will answer about
+     * visibility, and that was only ever checked when a folder was listed -- so a
+     * map you had just downloaded had no button until you left the folder and
+     * came back. Registration takes a few seconds; this asks until it does,
+     * then stops.
+     */
+    private void awaitVisibility(final MapSource.Posting posting,
+            final int attemptsLeft) {
+        if (attemptsLeft <= 0 || posting == null)
+            return;
+        if (PackageInstaller.isVisible(posting) != null) {
+            nifcAdapter.notifyDataSetChanged();
+            return;
+        }
+        nifcList.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                awaitVisibility(posting, attemptsLeft - 1);
+            }
+        }, 1000L);
+    }
+
     private void goToPosting(final MapSource.Posting posting) {
         PackageInstaller.goTo(posting, new PackageInstaller.GoTo() {
             @Override
@@ -2116,6 +2150,9 @@ public class MapDepot implements IPlugin {
                 applyNifcFilter();
                 nifcStatus.setText(p.name()
                         + " installed — tap it to go there.");
+                // ATAK has the file but has not registered it yet; the row's
+                // Show/Hide appears as soon as it has.
+                awaitVisibility(posting, 30);
             }
 
             @Override
@@ -2217,8 +2254,23 @@ public class MapDepot implements IPlugin {
         return sb.length() == 0 ? raw : sb.toString();
     }
 
+    /**
+     * A region's name for the button. Drops the same {@code ftp} segment the
+     * breadcrumb drops -- UASWFC's paths are rooted at the site, so without this
+     * the control an operator presses most reads "FTP Pacific NW".
+     */
     private static String prettyGacc(String raw) {
-        return pretty(raw);
+        if (raw == null)
+            return "";
+        final StringBuilder sb = new StringBuilder();
+        for (final String seg : raw.split("/")) {
+            if (seg.isEmpty() || "ftp".equalsIgnoreCase(seg))
+                continue;
+            if (sb.length() > 0)
+                sb.append(' ');
+            sb.append(pretty(seg));
+        }
+        return sb.length() == 0 ? pretty(raw) : sb.toString();
     }
 
     private static String decodeSegment(String encoded) {
@@ -2345,9 +2397,15 @@ public class MapDepot implements IPlugin {
                 // Only the hint is coloured; the size stays the same weight as
                 // every other row, so the list does not turn into a christmas
                 // tree once a few maps are installed.
+                //
+                // The original filename comes off once it is installed: it is
+                // there to help choose what to download, and afterwards it only
+                // pushes the line to a third wrap and crowds the buttons.
                 final String hint = " · tap to go there";
+                final String detailText = posting.describe()
+                        .replaceAll("\\s+·\\s+[^·]+\\.(pdf|kmz)$", "");
                 final SpannableString line =
-                        new SpannableString(posting.describe() + hint);
+                        new SpannableString(detailText + hint);
                 line.setSpan(
                         new ForegroundColorSpan(pluginContext.getResources()
                                 .getColor(R.color.action_green)),
