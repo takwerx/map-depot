@@ -139,6 +139,18 @@ public final class PackageInstaller {
         for (String candidate : new String[] {
                 pkg.fileName(), pkg.legacyFileName() }) {
             final File f = new File(dir, candidate);
+            // Guarded for the same reason fetch() guards its destination, and
+            // it matters more here: this file gets deleted. A name carrying a
+            // separator would otherwise resolve outside the directory, and
+            // because a listing without an exact size skips the length check
+            // below, any existing file there would match and be offered with a
+            // Remove button.
+            try {
+                guardInside(dir, f);
+            } catch (Exception escapes) {
+                Log.w(TAG, "ignoring " + candidate + ": " + escapes);
+                continue;
+            }
             if (f.isFile() && (pkg.bytes() <= 0 || f.length() == pkg.bytes()))
                 return f;
         }

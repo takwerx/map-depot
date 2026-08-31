@@ -95,6 +95,25 @@ public interface MapSource {
     Pattern MAP_FILE = Pattern.compile(".*\\.(pdf|kmz)$",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * Whether a listing's name is usable as a file name.
+     *
+     * A name is not a path. Both archives hand back names that end up as the
+     * file written into ATAK's tree, and NIFC's arrive URL-decoded, so an
+     * encoded separator becomes a real one after decode() and a name like
+     * {@code ../../tools/x.pdf} would otherwise be carried all the way to a
+     * File. The installer refuses to write outside its directory, but the
+     * cheapest place to stop this is before it becomes a name at all.
+     */
+    static boolean safeName(String name) {
+        if (name == null || name.isEmpty())
+            return false;
+        if (".".equals(name) || "..".equals(name))
+            return false;
+        return name.indexOf('/') < 0 && name.indexOf('\\') < 0
+                && !name.contains("..") && name.indexOf('\u0000') < 0;
+    }
+
     /** One row of a listing: a folder to walk into, or a file to fetch. */
     final class Entry {
         /** Decoded, for reading. */

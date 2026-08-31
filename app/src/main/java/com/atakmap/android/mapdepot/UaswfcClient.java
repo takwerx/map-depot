@@ -166,7 +166,7 @@ public final class UaswfcClient implements MapSource {
                             continue;
                         final String name = f.optString("name");
                         final String href = f.optString("url");
-                        if (name.isEmpty() || !safePath(href)) {
+                        if (!MapSource.safeName(name) || !safePath(href)) {
                             hidden++;
                             continue;
                         }

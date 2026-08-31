@@ -1,10 +1,10 @@
 ATAK Plugin — Map Depot
 
-**Download Map Depot 1.3** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
+**Download Map Depot 1.4** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
 
-- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.3/ATAK-Plugin-MapDepot-1.3--5.6.0-civ-release.apk
-- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.3/ATAK-Plugin-MapDepot-1.3--5.7.0-civ-release.apk
-- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.3/ATAK-Plugin-MapDepot-1.3--5.8.0-civ-release.apk
+- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.6.0-civ-release.apk
+- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.7.0-civ-release.apk
+- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.8.0-civ-release.apk
 
 All releases: https://github.com/takwerx/map-depot/releases
 
@@ -58,7 +58,7 @@ archives are read live, since what they hold changes through the day.
 _________________________________________________________________
 STATUS
 
-Version 1.3. Verified on ATAK-CIV 5.8.0.3.
+Version 1.4. Verified on ATAK-CIV 5.8.0.3.
 
 _________________________________________________________________
 POINT OF CONTACTS

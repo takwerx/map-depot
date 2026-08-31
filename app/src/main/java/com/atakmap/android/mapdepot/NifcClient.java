@@ -287,8 +287,10 @@ public final class NifcClient implements MapSource {
                 continue;
 
             final boolean dir = href.endsWith("/");
+            // decode() turns %2F back into a separator, so the check has to
+            // happen after it, and has to be for a name rather than a path.
             final String name = strip(decode(text.isEmpty() ? href : text));
-            if (name.isEmpty() || ".".equals(name) || "..".equals(name))
+            if (!MapSource.safeName(name))
                 continue;
 
             final MapSource.Entry e = new MapSource.Entry(name, href, dir,
