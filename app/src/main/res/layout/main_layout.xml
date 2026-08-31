@@ -27,8 +27,8 @@
             android:id="@+id/btn_dted"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="72dp"
+            android:layout_marginBottom="4dp"
+            android:minHeight="52dp"
             android:text="@string/elevation_heading" />
 
         <Button
@@ -36,8 +36,8 @@
             android:id="@+id/btn_maps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="72dp"
+            android:layout_marginBottom="4dp"
+            android:minHeight="52dp"
             android:text="@string/maps_heading" />
 
         <Button
@@ -45,8 +45,8 @@
             android:id="@+id/btn_forests"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="72dp"
+            android:layout_marginBottom="4dp"
+            android:minHeight="52dp"
             android:text="@string/forests_heading" />
 
         <Button
@@ -54,8 +54,8 @@
             android:id="@+id/btn_recmaps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="72dp"
+            android:layout_marginBottom="4dp"
+            android:minHeight="52dp"
             android:text="@string/recmaps_heading" />
 
         <Button
@@ -63,8 +63,8 @@
             android:id="@+id/btn_nifc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="72dp"
+            android:layout_marginBottom="4dp"
+            android:minHeight="52dp"
             android:text="@string/nifc_heading" />
 
         <Button
@@ -72,7 +72,7 @@
             android:id="@+id/btn_uaswfc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="72dp"
+            android:minHeight="52dp"
             android:text="@string/uaswfc_heading" />
 
         <TextView
