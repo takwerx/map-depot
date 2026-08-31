@@ -36,6 +36,7 @@ import com.atakmap.coremap.log.Log;
 import java.io.File;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
@@ -1785,7 +1786,7 @@ public class MapDepot implements IPlugin {
                 maps++;
         }
         final StringBuilder sb = new StringBuilder();
-        final String where = nifcDecodedPath.isEmpty() ? "" : nifcDecodedPath;
+        final String where = breadcrumb(nifcDecodedPath);
         if (!where.isEmpty())
             sb.append(where).append('\n');
         if (folders == 0 && maps == 0) {
@@ -1858,6 +1859,27 @@ public class MapDepot implements IPlugin {
     /** {@code 20260729}, and the separated spellings of the same thing. */
     private static final java.util.regex.Pattern DATE_FOLDER =
             java.util.regex.Pattern.compile("^\\d{4}[-_.]?\\d{2}[-_.]?\\d{2}$");
+
+    /**
+     * Where the operator is, written for reading rather than as a path.
+     *
+     * UASWFC's paths are rooted at the site, so they start with the server's own
+     * "ftp" directory -- plumbing the operator did not ask about and which read
+     * as lowercase noise at the top of the panel.
+     */
+    private static String breadcrumb(String decodedPath) {
+        if (decodedPath == null || decodedPath.isEmpty())
+            return "";
+        final StringBuilder sb = new StringBuilder();
+        for (final String seg : decodedPath.split("/")) {
+            if (seg.isEmpty() || "ftp".equalsIgnoreCase(seg))
+                continue;
+            if (sb.length() > 0)
+                sb.append(" \u203a ");
+            sb.append(pretty(seg));
+        }
+        return sb.toString();
+    }
 
     /** Back walks up the stack, and leaves the browser at the GACC. */
     private void nifcBack() {
@@ -2083,8 +2105,26 @@ public class MapDepot implements IPlugin {
         return prettyGacc(decodeSegment(path));
     }
 
-    /** {@code calif_n} reads as "Calif N" rather than as a directory name. */
-    private static String prettyGacc(String raw) {
+    /**
+     * Words that are initials rather than words, and look wrong title-cased.
+     * "Pacific Nw" was the one that prompted this; the rest are the same
+     * mistake waiting in a folder name.
+     */
+    private static final java.util.Set<String> ACRONYM =
+            new HashSet<>(Arrays.asList(
+                    "N", "S", "E", "W", "NW", "NE", "SW", "SE",
+                    "IR", "GIS", "IAP", "UAS", "FTP", "QR", "PDF", "KMZ",
+                    "USFS", "BLM", "NPS", "DPA", "GACC", "NIFC", "UASWFC",
+                    "AM", "PM", "DIV", "MP", "US", "USA"));
+
+    /**
+     * A folder name as a person would write it: {@code pacific_nw} to
+     * "Pacific NW", {@code calif_n} to "Calif N", {@code DAILY MAP PRODUCT}
+     * left alone.
+     */
+    static String pretty(String raw) {
+        if (raw == null)
+            return "";
         final String cleaned = raw.replace('/', ' ').replace('_', ' ').trim();
         final StringBuilder sb = new StringBuilder();
         for (final String w : cleaned.split("\\s+")) {
@@ -2092,11 +2132,25 @@ public class MapDepot implements IPlugin {
                 continue;
             if (sb.length() > 0)
                 sb.append(' ');
+            final String upper = w.toUpperCase(java.util.Locale.US);
+            if (ACRONYM.contains(upper)) {
+                sb.append(upper);
+                continue;
+            }
+            // Already shouting, or already mixed on purpose -- leave it.
+            if (w.equals(upper) && w.length() > 1) {
+                sb.append(w);
+                continue;
+            }
             sb.append(Character.toUpperCase(w.charAt(0)));
             if (w.length() > 1)
                 sb.append(w.substring(1));
         }
         return sb.length() == 0 ? raw : sb.toString();
+    }
+
+    private static String prettyGacc(String raw) {
+        return pretty(raw);
     }
 
     private static String decodeSegment(String encoded) {
