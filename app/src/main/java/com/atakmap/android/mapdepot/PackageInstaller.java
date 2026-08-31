@@ -747,26 +747,60 @@ public final class PackageInstaller {
         return null;
     }
 
-    /** Whether GRG outlines are drawn, or null when this build has no such layer. */
+    /**
+     * Whether GRG outlines are drawn, or null when this build has no such layer.
+     *
+     * Read from the preference rather than from the layer, because the layer is
+     * always visible: the overlay manager hides the outlines by turning off the
+     * feature sets *inside* it, not by turning the layer off. Asking the layer
+     * therefore always answered "on", which is why the control did nothing and
+     * never changed its label.
+     */
     public static Boolean outlinesVisible() {
-        final com.atakmap.map.layer.Layer l = outlinesLayer();
-        return l == null ? null : Boolean.valueOf(l.isVisible());
+        if (outlinesLayer() == null)
+            return null;
+        final com.atakmap.android.maps.MapView mv =
+                com.atakmap.android.maps.MapView.getMapView();
+        if (mv == null)
+            return null;
+        return Boolean.valueOf(android.preference.PreferenceManager
+                .getDefaultSharedPreferences(mv.getContext())
+                .getBoolean(OUTLINES_PREF, true));
     }
 
+    /**
+     * Turns the footprints on or off, the way the overlay manager does it:
+     * {@code setFeatureSetsVisible} across every feature set in the coverage
+     * store, then ATAK's own preference so the state survives a restart and the
+     * overlay manager's own toggle agrees with ours.
+     */
     public static boolean setOutlinesVisible(boolean visible) {
         final com.atakmap.map.layer.Layer l = outlinesLayer();
-        if (l == null)
+        if (!(l instanceof com.atakmap.map.layer.feature.FeatureLayer3))
             return false;
         try {
-            l.setVisible(visible);
+            final com.atakmap.map.layer.feature.FeatureDataStore2 store =
+                    ((com.atakmap.map.layer.feature.FeatureLayer3) l)
+                            .getDataStore();
+            if (store == null)
+                return false;
+
+            // No filter set on the parameters, so this is every feature set the
+            // store holds -- one per GRG -- which is what the overlay manager's
+            // own toggle does.
+            store.setFeatureSetsVisible(
+                    new com.atakmap.map.layer.feature.FeatureDataStore2
+                            .FeatureSetQueryParameters(),
+                    visible);
+
             final com.atakmap.android.maps.MapView mv =
-                com.atakmap.android.maps.MapView.getMapView();
+                    com.atakmap.android.maps.MapView.getMapView();
             if (mv != null)
                 android.preference.PreferenceManager
                         .getDefaultSharedPreferences(mv.getContext())
                         .edit().putBoolean(OUTLINES_PREF, visible).apply();
             return true;
-        } catch (RuntimeException notThisBuild) {
+        } catch (Exception notThisBuild) {
             Log.w(TAG, "could not set outlines: " + notThisBuild);
             return false;
         }
