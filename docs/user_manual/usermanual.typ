@@ -3,7 +3,7 @@
 
 #show: userguide.with(
    plugin-name: "Map Depot",
-   plugin-version: "1.0",
+   plugin-version: "1.1",
    platform: "ATAK",
    platform-version: "5.8.0",
 )
@@ -188,10 +188,14 @@ out, with its margin, legend and printed detail.
 
 #tak-slide[
 #toolbox.side-by-side(columns: (8fr, 4fr))[
-  #image("16.png", width: 100%)
+  #image("16.jpg", width: 100%)
 ][
   Installed, a district map lands as a georeferenced overlay, in the right
   place on the ground, over whatever base map is showing.
+
+  #v(6pt)
+  *Show* and *Hide* work here too -- a district map is a GeoPDF like any
+  incident map.
 ]
 ]
 
@@ -214,18 +218,39 @@ Both are public and need no account.
 ]
 
 #tak-slide[
-Pick your geographic area once and it is remembered. From there you walk down to
-your fire and into whatever folder that shop uses -- they do not all agree, so
-the plugin shows you what is actually there rather than a fixed set of screens.
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("20.png", width: 100%)
+][
+  Pick your geographic area once and it is remembered. You can change it
+  whenever you like -- the next fire may be somewhere else.
+]
+]
 
-#v(6pt)
-Folders named by date are listed newest first, because the map you want is
-almost always today's.
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("25.png", width: 100%)
+][
+  From there you walk down to your fire and into whatever folder that shop
+  uses. They do not all agree, so the plugin shows what is actually there
+  rather than a fixed set of screens.
 
-#v(6pt)
-Only maps are offered: PDFs and KMZs. Geodatabases, shapefile bundles and flight
-logs are not maps and are left out, and the line under the buttons says how many
-were hidden, so a short list is never mistaken for an empty folder.
+  #v(6pt)
+  Folders named by date are listed newest first, because the map you want is
+  almost always today's.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("26.png", width: 100%)
+][
+  Only maps are offered: PDFs and KMZs. Geodatabases, shapefile bundles and
+  flight logs are not maps and are left out.
+
+  #v(6pt)
+  The line under the buttons says how many were hidden, so a short list is
+  never mistaken for an empty folder.
+]
 ]
 
 #tak-slide[
@@ -246,6 +271,40 @@ it came off the plotter. Division letters, sortie numbers and IR areas are all
 kept, because two maps you can both pick have to be able to sit on the device
 together. The original name is shown under the new one, so a map named over the
 radio can still be found.
+
+#v(6pt)
+A PDF says *MAP* and installs as a georeferenced overlay you can see through.
+A KMZ says *OVERLAY* and installs as ATAK's own kind of overlay. The name tells
+you which you are about to get.
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("38.png", width: 100%)
+][
+  The same fire's drone products: two PDFs and a KMZ, named so you can tell at
+  a glance which is which without reading the extension.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("28.png", width: 100%)
+][
+  Tapping *Download* says what it will cost, and what the file is called on the
+  server -- so a map named over the radio can still be matched to the one you
+  are about to fetch.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("29.png", width: 100%)
+][
+  While it runs, the row carries the progress and the others stop offering
+  themselves: these are tens of megabytes and two at once on a hotspot serves
+  nobody. *Cancel download* stops it and keeps nothing half-finished.
+]
 ]
 
 #tak-slide[
@@ -257,30 +316,112 @@ to arrive somewhere they never leave.
 
 #v(6pt)
 Every folder has a *Pin* button. Press it on your fire and it sits at the top of
-the first screen from then on, one tap away. *Remove* on a pinned row unpins it
-and deletes nothing.
+the first screen from then on, in cyan, one tap away. *Remove* on a pinned row
+unpins it and deletes nothing.
 
-#v(6pt)
-Anything can be pinned, not only a fire: if you live in one product folder, pin
-that and you land straight in it. Pins survive a restart and a plugin update, and
-the two archives keep their own.
 ]
 
 #tak-slide[
-== Working with what you have downloaded
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("22.png", width: 100%)
+][
+  Press *Pin* on the fire you are working.
+]
+]
 
-#v(6pt)
-- *Show* / *Hide* turns one map on or off without leaving the page.
-- *Outlines* at the top turns the footprints of every GRG on or off, which is
-  how you see what covers the ground in front of you.
-- Tapping an installed row goes to that map.
-- *Remove* deletes it, telling ATAK first so no layer is left pointing at a
-  file that is gone.
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("23.png", width: 100%)
+][
+  It sits at the top of the first screen from then on, in cyan so it is obvious
+  why it is above everything else.
 
-#v(6pt)
-The filter widens with where you are standing: at the top of an archive
-*Installed* is everything you hold, and it narrows to the folder as you walk
-down into it.
+  #v(6pt)
+  Anything can be pinned, not only a fire: if you live in one product folder,
+  pin that and you land straight in it. Pins survive a restart and a plugin
+  update, and the two archives keep their own.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (7fr, 5fr))[
+  #image("31.png", width: 100%)
+][
+  == Working with what you have downloaded
+
+  - *Show* / *Hide* turns one map on or off without leaving the page.
+  - *Outlines* turns the footprints of every GRG on or off, which is how you
+    see what covers the ground in front of you.
+  - Tapping an installed row goes to that map.
+  - *Remove* deletes it, telling ATAK first so no layer is left pointing at a
+    file that is gone.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (7fr, 5fr))[
+  #image("42.jpg", width: 100%)
+][
+  A drone IR product, on the ground: the perimeter and every heat source the
+  aircraft found, drawn over whatever base map you are using.
+]
+]
+
+#tak-slide[
+#image("34.jpg", width: 100%)
+
+#v(4pt)
+An IR map shown, with *Outlines* on.
+]
+
+#tak-slide[
+#image("35.jpg", width: 100%)
+
+#v(4pt)
+The same map hidden. The footprint stays either way, so you can see what a map
+covers before deciding to turn it on.
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("44.png", width: 100%)
+][
+  The filter widens with where you are standing: at the top of an archive
+  *Installed* is everything you hold, and it narrows to the folder as you walk
+  down into it. *Available* is the other way round.
+
+  #v(6pt)
+  A filter that hides everything says so, and names itself, rather than leaving
+  a folder looking empty when it is not.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("43.png", width: 100%)
+][
+  *Available* is what you have not got yet.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("33.png", width: 100%)
+][
+  *Installed* stays useful high up the tree: standing at the fire, a map
+  downloaded from a folder two levels below is still listed, with the folder it
+  came from rather than a size.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("45.png", width: 100%)
+][
+  *Remove* asks first, and deletes through ATAK rather than behind its back --
+  the layer is unloaded before the file goes, so nothing is left pointing at
+  something that is no longer there.
+]
 ]
 
 #tak-slide[
