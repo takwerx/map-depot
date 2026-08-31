@@ -1,12 +1,12 @@
 # Map Depot for ATAK — User Guide
 
-**Version 0.6 · takwerx**
+**Version 1.1 · takwerx**
 
-**Download Map Depot 0.6** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
+**Download Map Depot 1.1** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
 
-- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v0.6/ATAK-Plugin-MapDepot-0.6--5.6.0-civ-release.apk
-- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v0.6/ATAK-Plugin-MapDepot-0.6--5.7.0-civ-release.apk
-- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v0.6/ATAK-Plugin-MapDepot-0.6--5.8.0-civ-release.apk
+- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.1/ATAK-Plugin-MapDepot-1.1--5.6.0-civ-release.apk
+- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.1/ATAK-Plugin-MapDepot-1.1--5.7.0-civ-release.apk
+- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.1/ATAK-Plugin-MapDepot-1.1--5.8.0-civ-release.apk
 
 All releases: https://github.com/takwerx/map-depot/releases
 
@@ -42,7 +42,7 @@ Load the plugin from ATAK's Plugins manager, then open it from the toolbar.
 
 ![Map Depot in the ATAK toolbar](screenshots/1_plugin_in_toolbar.png)
 
-The landing page offers four kinds of data, each on its own page.
+The landing page offers six kinds of data, each on its own page.
 
 ![The Map Depot landing page](screenshots/2_landing_page.png)
 
@@ -53,18 +53,22 @@ The landing page offers four kinds of data, each on its own page.
 - **Offline Public Lands** — Forest Service vector basemaps, one per national
   forest or grassland, held on the device.
 - **Offline Ranger District Maps** — the printed district maps, as GeoPDFs.
+- **Incident Maps (NIFC)** — the operational maps posted for a going fire: ops,
+  division, air operations, transport, briefing and IR.
+- **Drone IR Maps (UASWFC)** — infrared flown by uncrewed aircraft, as
+  georeferenced PDFs and KMZs.
 
 ---
 
 ## 2. How every page works
 
-A list of what is available, a **Get** button on each row, and a line at the top
-saying what is happening. Rows report one of three states, so the list doubles as
-an inventory of what the device already holds.
+A list of what is available, a **Download** button on each row, and a line at the
+top saying what is happening. Rows report one of three states, so the list
+doubles as an inventory of what the device already holds.
 
-![Rows showing Remove, Get and Finish](screenshots/3_elevation_row_states.png)
+![Rows showing Remove, Download and Finish](screenshots/3_elevation_row_states.png)
 
-- **Get** — none of it is on the device.
+- **Download** — none of it is on the device.
 - **Finish** — some of it is. Only the missing part downloads.
 - **Remove** — all of it is here.
 
@@ -169,11 +173,100 @@ it belongs to.
 Installed, a district map lands as a georeferenced overlay, in the right place on
 the ground, over whatever base map is showing.
 
-![A district map drawn over imagery](screenshots/16_district_map_on_map.png)
+![A district map drawn over imagery](screenshots/16_district_map_on_map.jpg)
 
 ---
 
-## 7. Finding what you already have
+## 7. Incident maps
+
+Two archives the incident community publishes to. Where every other page is a
+catalog that changes with a release, these change hourly: what is on the page is
+what the fire's GIS shop uploaded this morning.
+
+- **Incident Maps (NIFC)** — `ftp.wildfire.gov`. Ops, division, air operations,
+  transport, briefing and IR products, for fires across the country.
+- **Drone IR Maps (UASWFC)** — `uaswfc.org`. Infrared flown by uncrewed
+  aircraft.
+
+Both are public and need no account.
+
+### Picking your area
+
+Pick your geographic area once and it is remembered. It is a button, not a buried
+setting, so you can change it when the next fire is somewhere else.
+
+![Picking a geographic area](screenshots/20_incident_region_picker.png)
+
+From there you walk down to your fire and into whatever folder that shop uses.
+They do not all agree — one fire has `DAILY MAP PRODUCT`, `GIS` and `IR`, another
+has `Current`, `Products` and `QR` — so the plugin shows what is actually there
+rather than a fixed set of screens.
+
+Folders named by date are listed **newest first**, because the map you want is
+almost always today's.
+
+![Date folders, newest first](screenshots/21_incident_dates_newest_first.png)
+
+### Names you can read
+
+The archives name files for a GIS shop's file browser. Map Depot renames them for
+a phone:
+
+```
+ops_arch_e_port_20260828_0115_RoweCreekComplex_ORPRD000491_0828day.pdf
+  →  OR-PRD-ROWE-CREEK-COMPLEX-MAP-OPS-082826.pdf
+```
+
+![A file list](screenshots/22_incident_file_list.png)
+
+The date is the **operational period** — the shift the map is for, not the moment
+it came off the plotter. Division letters, sortie numbers and IR areas are all
+kept, because two maps you can both pick have to be able to sit on the device
+together. The original name is shown underneath, so a map named over the radio
+can still be found.
+
+A PDF says **MAP** and installs as a georeferenced overlay. A KMZ says
+**OVERLAY** and installs as ATAK's own kind of overlay. The name tells you which
+you are about to get.
+
+![A KMZ and a PDF in the same folder](screenshots/25_overlay_and_map.png)
+
+Only maps are offered: PDFs and KMZs. Geodatabases, shapefile bundles and flight
+logs are left out — a flight log is a PDF, but it is a sortie's paperwork rather
+than a map, and one filed as a GRG would drape a flat page over your map. The
+line under the buttons says how many were hidden, so a short list is never
+mistaken for an empty folder.
+
+### Pinning the fire you are working
+
+A crew assigned to a fire opens the same folder twenty times a day, and reaching
+it means a region, a year folder, the fire and then a product folder.
+
+Every folder has a **Pin** button.
+
+![Pinning a fire](screenshots/23_pin_a_fire.png)
+
+It then sits at the top of the first screen, in cyan, one tap away. **Remove** on
+a pinned row unpins it and deletes nothing.
+
+![A pinned fire at the top](screenshots/24_pinned_at_top.png)
+
+Anything can be pinned, not only a fire: if you live in one product folder, pin
+that and you land straight in it. Pins survive a restart and a plugin update, and
+the two archives keep their own.
+
+### On the map
+
+![A drone IR product on the ground](screenshots/27_drone_ir_on_map.jpg)
+
+**Outlines** turns the footprints of every GRG on or off, which is how you see
+what covers the ground in front of you before deciding what to turn on.
+
+![Outlines on](screenshots/26_outlines_on.jpg)
+
+---
+
+## 8. Finding what you already have
 
 Every page has a filter button, next to **Back**, that cycles **All** →
 **Installed** → **Available**. Set to **Installed**, the page becomes a list of
@@ -190,9 +283,27 @@ Straight after a download it may say it is still being added to the map list —
 ATAK is indexing the file, which takes a while for a large one. It goes there on
 its own when that finishes. Nothing needs tapping again.
 
+Set to **Available**, the page hides everything you already hold, which is the
+view you want when you are adding to a device rather than checking it.
+
+![The list filtered to available](screenshots/29_filter_available.png)
+
+When a filter is hiding everything, the page says so rather than reading as an
+empty folder — "3 maps here, hidden by the Installed filter" is a different
+problem from a folder with nothing in it.
+
+![A folder whose contents are hidden by the filter](screenshots/28_hidden_by_filter.png)
+
+### Show and Hide
+
+An installed overlay or GRG carries a **Show** or **Hide** button beside
+**Remove**. It does what the Overlay Manager's checkbox does, without leaving the
+plugin — useful when you hold a dozen maps of the same fire and want one of them
+on at a time.
+
 ---
 
-## 8. Removing
+## 9. Removing
 
 **Remove** appears on anything installed, and says what removing actually frees
 before it does it.
@@ -209,9 +320,12 @@ would have to go for the space to come back.
 
 ![A removal that would free nothing](screenshots/8_remove_frees_nothing.png)
 
+**Remove** on a pinned folder is a different thing: it unpins the folder and
+deletes nothing. A pin is a shortcut, not a download.
+
 ---
 
-## 9. Where files go
+## 10. Where files go
 
 Map Depot writes into ATAK's own folders, so what it installs is
 indistinguishable from data put there by hand.
@@ -222,6 +336,8 @@ indistinguishable from data put there by hand.
 | Streaming base maps | `atak/imagery/`, as map source files |
 | Offline public lands | `atak/imagery/`, as vector tile packages |
 | Ranger district maps | `atak/grg/`, as georeferenced PDFs |
+| Incident and drone maps (PDF) | `atak/grg/`, as georeferenced PDFs |
+| Incident and drone maps (KMZ) | `atak/overlays/`, as ATAK overlays |
 
 Installed maps appear in ATAK's own layer list alongside anything else you have.
 
@@ -232,7 +348,7 @@ so no layer is left pointing at something that is gone.
 
 ---
 
-## 10. In the plugin
+## 11. In the plugin
 
 The same guide ships inside the plugin as a PDF, for when you are in the field
 without this page. In ATAK go to **Settings → Tool Preferences → Map Depot →
