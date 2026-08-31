@@ -2054,8 +2054,10 @@ public class MapDepot implements IPlugin {
             final TextView name = row.findViewById(R.id.region_name);
             final TextView detail = row.findViewById(R.id.region_detail);
             final Button action = row.findViewById(R.id.region_action);
+            final Button eye = row.findViewById(R.id.region_visible);
             final ProgressBar bar = row.findViewById(R.id.region_progress);
             bar.setVisibility(View.GONE);
+            eye.setVisibility(View.GONE);
 
             if (item instanceof MapSource.Entry) {
                 final MapSource.Entry e = (MapSource.Entry) item;
@@ -2118,6 +2120,32 @@ public class MapDepot implements IPlugin {
                         confirmAndInstallPosting(posting);
                 }
             });
+
+            // Turning the overlay on and off without leaving the panel.
+            // Offered only when ATAK will actually answer: before it has
+            // registered a freshly downloaded map there is no handler to ask,
+            // and a control that silently does nothing is worse than no control.
+            if (done) {
+                final Boolean visible = PackageInstaller.isVisible(posting);
+                if (visible != null) {
+                    eye.setVisibility(View.VISIBLE);
+                    eye.setText(pluginContext.getString(
+                            visible.booleanValue() ? R.string.shown
+                                    : R.string.hidden));
+                    eye.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            final boolean want = !visible.booleanValue();
+                            if (PackageInstaller.setVisible(posting, want)) {
+                                nifcAdapter.notifyDataSetChanged();
+                            } else {
+                                nifcStatus.setText("ATAK would not change "
+                                        + posting.name());
+                            }
+                        }
+                    });
+                }
+            }
 
             // An installed map is a place to go, the same as a forest map is.
             row.setOnClickListener(done ? new View.OnClickListener() {

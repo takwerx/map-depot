@@ -39,6 +39,8 @@
     <string name="nifc_heading">Incident Maps (NIFC)</string>
     <string name="uaswfc_heading">Drone IR Maps (UASWFC)</string>
     <string name="download">Download</string>
+    <string name="shown">Shown</string>
+    <string name="hidden">Hidden</string>
     <string name="nifc_pick_gacc">Pick your area</string>
     <string name="nifc_loading">Loading…</string>
     <string name="nifc_empty">Nothing posted here</string>

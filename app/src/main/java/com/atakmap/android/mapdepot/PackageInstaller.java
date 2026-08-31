@@ -685,6 +685,59 @@ public final class PackageInstaller {
     }
 
     /**
+     * Whether ATAK is currently drawing this map, or {@code null} when it cannot
+     * say -- the file is not installed, ATAK has not registered it yet, or this
+     * build has no handler for that kind of file.
+     *
+     * Asked through {@code URIContentManager}, the same route
+     * ZOOM_TO_FILE_ACTION takes, so it works for a GeoPDF and a KMZ alike
+     * without either being special-cased here.
+     */
+    public static Boolean isVisible(Depot.Package pkg) {
+        final com.atakmap.android.hierarchy.action.Visibility v = visibility(pkg);
+        return v == null ? null : Boolean.valueOf(v.isVisible());
+    }
+
+    /**
+     * Turns the overlay on or off. Returns false when ATAK would not say -- the
+     * caller should leave the control as it found it rather than showing a state
+     * that is not real.
+     */
+    public static boolean setVisible(Depot.Package pkg, boolean visible) {
+        final com.atakmap.android.hierarchy.action.Visibility v = visibility(pkg);
+        if (v == null)
+            return false;
+        try {
+            return v.setVisible(visible);
+        } catch (RuntimeException notThisBuild) {
+            Log.w(TAG, "could not set visibility on " + pkg.fileName() + ": "
+                    + notThisBuild);
+            return false;
+        }
+    }
+
+    private static com.atakmap.android.hierarchy.action.Visibility visibility(
+            Depot.Package pkg) {
+        final File f = held(pkg);
+        if (f == null)
+            return null;
+        try {
+            final com.atakmap.android.data.URIContentHandler h =
+                    com.atakmap.android.data.URIContentManager.getInstance()
+                            .getHandler(f);
+            if (h == null
+                    || !h.isActionSupported(
+                            com.atakmap.android.hierarchy.action.Visibility.class))
+                return null;
+            return (com.atakmap.android.hierarchy.action.Visibility) h;
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "no visibility handler for " + f.getName() + ": "
+                    + notThisBuild);
+            return null;
+        }
+    }
+
+    /**
      * Removes a package, telling ATAK before taking the file away.
      *
      * The order matters and is the opposite of ATAK's own. Deleting a GRG from
