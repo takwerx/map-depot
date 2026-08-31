@@ -433,8 +433,7 @@ public final class NifcClient implements MapSource {
     }
 
     private static String describe(Exception e) {
-        final String m = e.getMessage();
-        return m != null && !m.isEmpty() ? m : e.getClass().getSimpleName();
+        return MapSource.explain(e, "the NIFC server");
     }
 
     // -------------------------------------------------------------- postings

@@ -65,6 +65,30 @@ public interface MapSource {
 
     void shutdown();
 
+    /**
+     * What went wrong, in words an operator can act on.
+     *
+     * The raw exception text is written for a developer: a crew in a canyon
+     * with no signal was told "Unable to resolve host uaswfc.org: No address
+     * associated with hostname", which is Java's way of saying there is no
+     * network. What the operator needs to know is whether to move, wait, or
+     * stop trying.
+     */
+    static String explain(Exception e, String host) {
+        if (e instanceof java.net.UnknownHostException)
+            return "no network — cannot reach " + host;
+        if (e instanceof java.net.SocketTimeoutException)
+            return "timed out reaching " + host + " — signal may be weak";
+        if (e instanceof javax.net.ssl.SSLException)
+            return "secure connection to " + host + " failed";
+        if (e instanceof java.net.ConnectException)
+            return "could not connect to " + host;
+        if (e instanceof java.io.FileNotFoundException)
+            return "that folder is no longer there";
+        final String m = e.getMessage();
+        return m != null && !m.isEmpty() ? m : e.getClass().getSimpleName();
+    }
+
     // ------------------------------------------------------------------ types
 
     /** What the plugin will install. Everything else is not offered. */
