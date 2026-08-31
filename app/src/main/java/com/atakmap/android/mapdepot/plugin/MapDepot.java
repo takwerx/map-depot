@@ -1501,7 +1501,7 @@ public class MapDepot implements IPlugin {
             nifcGaccButton.setText(labelForPath(remembered));
             if (gaccPaths.isEmpty())
                 loadGaccList(false);
-            browse(remembered, decodeSegment(remembered), true);
+            browse(remembered, decodeSegment(remembered), Nav.ROOT);
         }
     }
 
@@ -1566,7 +1566,7 @@ public class MapDepot implements IPlugin {
                                 saveGacc(path);
                                 nifcGaccButton.setText(gaccLabels.get(which));
                                 nifcStack.clear();
-                                browse(path, decodeSegment(path), true);
+                                browse(path, decodeSegment(path), Nav.ROOT);
                             }
                         })
                 .setNegativeButton(android.R.string.cancel, null)
@@ -1574,14 +1574,25 @@ public class MapDepot implements IPlugin {
     }
 
     /**
-     * @param reset true when this is a new starting point rather than a step
-     *        deeper, which is what keeps Back from walking above the GACC
+     * How the browser arrived at a folder, which decides what happens to the
+     * history. One boolean used to do this and got Back wrong: going back
+     * cleared the whole stack, so the first Back worked and the second left the
+     * panel entirely.
      */
+    private enum Nav {
+        /** A step deeper. Remember where we were. */
+        DESCEND,
+        /** A new starting point. Forget everything above it. */
+        ROOT,
+        /** A step back out. The entry was already popped. */
+        BACK
+    }
+
     private void browse(final String encodedPath, final String decodedPath,
-            final boolean reset) {
-        if (reset)
+            final Nav nav) {
+        if (nav == Nav.ROOT)
             nifcStack.clear();
-        else
+        else if (nav == Nav.DESCEND)
             nifcStack.push(new String[] {
                     nifcPath, nifcDecodedPath
             });
@@ -1778,7 +1789,22 @@ public class MapDepot implements IPlugin {
         if (!where.isEmpty())
             sb.append(where).append('\n');
         if (folders == 0 && maps == 0) {
-            sb.append(pluginContext.getString(R.string.nifc_empty));
+            // "Nothing posted here" is a lie when the folder is full and the
+            // filter is hiding all of it. Say which it is, and how to undo it.
+            int filteredOut = 0;
+            for (final Object o : nifcAllRows) {
+                if (!(o instanceof MapSource.Entry))
+                    filteredOut++;
+            }
+            if (filteredOut > 0 && nifcShown != Shown.ALL) {
+                sb.append(filteredOut)
+                        .append(filteredOut == 1 ? " map here, hidden by the "
+                                : " maps here, hidden by the ")
+                        .append(pluginContext.getString(labelFor(nifcShown)))
+                        .append(" filter");
+            } else {
+                sb.append(pluginContext.getString(R.string.nifc_empty));
+            }
         } else {
             if (folders > 0)
                 sb.append(folders).append(folders == 1 ? " folder" : " folders");
@@ -1842,9 +1868,7 @@ public class MapDepot implements IPlugin {
         final String[] previous = nifcStack.pop();
         // Re-listing rather than caching: a fire's folder gains files during the
         // day, and a stale list is worse here than a second of loading.
-        nifcPath = previous[0];
-        nifcDecodedPath = previous[1];
-        browse(previous[0], previous[1], true);
+        browse(previous[0], previous[1], Nav.BACK);
     }
 
     /**
@@ -2124,7 +2148,7 @@ public class MapDepot implements IPlugin {
                     @Override
                     public void onClick(View v) {
                         browse(source.childPath(nifcPath, e),
-                                join(nifcDecodedPath, e.name), false);
+                                join(nifcDecodedPath, e.name), Nav.DESCEND);
                     }
                 });
                 return row;
