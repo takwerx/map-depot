@@ -698,6 +698,29 @@ public final class PackageInstaller {
      * file. If ATAK has already removed it, that is fine -- the check is whether
      * it is gone, not who did it.
      */
+    /**
+     * What ATAK calls this kind of file, which its importers are registered
+     * against. A DELETE_DATA naming a pair no importer claims is answered with
+     * "no Importer found" and the layer is never unloaded -- the file goes and
+     * the overlay stays on the map until the next restart.
+     */
+    private static String contentTypeOf(Depot.Package pkg) {
+        return "grg".equals(pkg.destination()) ? "External GRG Data" : "KML";
+    }
+
+    /**
+     * KML and KMZ are separate mime types and ATAK registers both; guessing
+     * {@code application/octet-stream} matched neither.
+     */
+    private static String mimeTypeOf(Depot.Package pkg) {
+        final String name = pkg.fileName().toLowerCase(java.util.Locale.US);
+        if (name.endsWith(".kmz"))
+            return "application/vnd.google-earth.kmz";
+        if (name.endsWith(".kml"))
+            return "application/vnd.google-earth.kml+xml";
+        return "application/octet-stream";
+    }
+
     private static boolean retire(Depot.Package pkg, File f) {
         final String path = f.getAbsolutePath();
         if ("grg".equals(pkg.destination())
@@ -706,10 +729,8 @@ public final class PackageInstaller {
                 final android.content.Intent i = new android.content.Intent(
                         "com.atakmap.android.importexport.DELETE_DATA");
                 i.putExtra("uri", path);
-                i.putExtra("contentType", "grg".equals(pkg.destination())
-                        ? "External GRG Data"
-                        : "KML");
-                i.putExtra("mimeType", "application/octet-stream");
+                i.putExtra("contentType", contentTypeOf(pkg));
+                i.putExtra("mimeType", mimeTypeOf(pkg));
                 com.atakmap.android.ipc.AtakBroadcast.getInstance().sendBroadcast(i);
 
                 // Give the unload a moment to land before the file disappears.
