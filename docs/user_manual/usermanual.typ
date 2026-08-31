@@ -196,6 +196,76 @@ out, with its margin, legend and printed detail.
 ]
 
 #tak-slide[
+= Incident maps
+
+The maps posted for a going fire, from the two archives the incident community
+publishes to. Where every other page is a catalog that changes with a release,
+these change hourly: what is on the page is what the fire's GIS shop uploaded
+this morning.
+
+#v(6pt)
+- *Incident Maps (NIFC)* -- `ftp.wildfire.gov`. Ops, division, air operations,
+  transport, briefing and IR products, for every fire in the country.
+- *Drone IR Maps (UASWFC)* -- `uaswfc.org`. Infrared flown by uncrewed
+  aircraft, as georeferenced PDFs and KMZs.
+
+#v(6pt)
+Both are public and need no account.
+]
+
+#tak-slide[
+Pick your geographic area once and it is remembered. From there you walk down to
+your fire and into whatever folder that shop uses -- they do not all agree, so
+the plugin shows you what is actually there rather than a fixed set of screens.
+
+#v(6pt)
+Folders named by date are listed newest first, because the map you want is
+almost always today's.
+
+#v(6pt)
+Only maps are offered: PDFs and KMZs. Geodatabases, shapefile bundles and flight
+logs are not maps and are left out, and the line under the buttons says how many
+were hidden, so a short list is never mistaken for an empty folder.
+]
+
+#tak-slide[
+== Names you can read
+
+The archives name files for a GIS shop's file browser. Map Depot renames them
+for a phone:
+
+#v(6pt)
+```
+ops_arch_e_port_20260828_0115_RoweCreekComplex_ORPRD000491_0828day.pdf
+  -> OR-PRD-ROWE-CREEK-COMPLEX-MAP-OPS-082826.pdf
+```
+
+#v(6pt)
+The date is the operational period -- the shift the map is for, not the moment
+it came off the plotter. Division letters, sortie numbers and IR areas are all
+kept, because two maps you can both pick have to be able to sit on the device
+together. The original name is shown under the new one, so a map named over the
+radio can still be found.
+]
+
+#tak-slide[
+== Working with what you have downloaded
+
+#v(6pt)
+- *Show* / *Hide* turns one map on or off without leaving the page.
+- *Outlines* at the top turns the footprints of every GRG on or off, which is
+  how you see what covers the ground in front of you.
+- Tapping an installed row goes to that map.
+- *Remove* deletes it, telling ATAK first so no layer is left pointing at a
+  file that is gone.
+
+#v(6pt)
+The filter widens with where you are standing: at the top of an archive
+*Installed* is everything you hold, and it narrows to the folder as you walk
+down into it.
+]
+
+#tak-slide[
 = Finding what you have installed
 
 #toolbox.side-by-side(columns: (5fr, 7fr))[
