@@ -2356,7 +2356,7 @@ public class MapDepot implements IPlugin {
                 final String childDecoded = join(nifcDecodedPath, e.name);
                 final boolean isPinned = Pinned.isPinned(source.id(), childPath);
 
-                name.setText(pretty(e.name));
+                name.setText(breakable(pretty(e.name)));
                 detail.setText("Folder");
 
                 // Pin lives on the folder row because that is where the operator
@@ -2391,7 +2391,7 @@ public class MapDepot implements IPlugin {
             final boolean done = nifcInstalled.contains(posting.id());
             final boolean active = posting.id().equals(activePostingId);
 
-            name.setText(posting.name());
+            name.setText(breakable(posting.name()));
 
             if (done) {
                 // Only the hint is coloured; the size stays the same weight as
@@ -2477,6 +2477,21 @@ public class MapDepot implements IPlugin {
             } : null);
             return row;
         }
+    }
+
+    /**
+     * A map's name, with somewhere for the line to break.
+     *
+     * These names are one long token with no spaces, and Android's line breaker
+     * did not treat their hyphens as break opportunities -- it ran out of width
+     * and split mid-word, GRASSHOPPER-OVERLAY-A / USTIN-IR. Neither
+     * breakStrategy nor hyphenationFrequency changed that. A zero-width space
+     * after each hyphen is an explicit break opportunity, so it breaks where the
+     * name already has a seam and nowhere else. The character is invisible and
+     * is not part of the filename -- this is display only.
+     */
+    private static CharSequence breakable(String name) {
+        return name == null ? "" : name.replace("-", "-\u200B");
     }
 
     private static String join(String path, String segment) {
