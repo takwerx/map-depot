@@ -2401,7 +2401,10 @@ public class MapDepot implements IPlugin {
                 // The original filename comes off once it is installed: it is
                 // there to help choose what to download, and afterwards it only
                 // pushes the line to a third wrap and crowds the buttons.
-                final String hint = " · tap to go there";
+                // Its own line, deliberately. Appended to the size and the
+                // folder it came from, it wrapped anyway -- and a wrap lands
+                // wherever the width runs out rather than where it reads well.
+                final String hint = "\ntap to go there";
                 final String detailText = posting.describe()
                         .replaceAll("\\s+·\\s+[^·]+\\.(pdf|kmz)$", "");
                 final SpannableString line =
@@ -2559,7 +2562,9 @@ public class MapDepot implements IPlugin {
                 // Only the hint is coloured; the size stays the same weight as
                 // every other row so the list does not turn into a christmas
                 // tree once a few things are installed.
-                final String hint = " · tap to go there";
+                // Its own line, as on the incident rows: appended to a forest,
+                // a state and a size it wrapped wherever the width ran out.
+                final String hint = "\ntap to go there";
                 final SpannableString line =
                         new SpannableString(pkg.describe() + hint);
                 line.setSpan(
