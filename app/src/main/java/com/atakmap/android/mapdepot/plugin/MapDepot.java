@@ -1884,6 +1884,51 @@ public class MapDepot implements IPlugin {
             java.util.regex.Pattern.compile("^\\d{4}[-_.]?\\d{2}[-_.]?\\d{2}$");
 
     /**
+     * What to call a pin: the fire, and how far into it the pin sits.
+     *
+     * A pin on the fire itself is just "Timber", but one on Timber's Products
+     * folder is "Timber > Products" -- otherwise two pins on the same fire are
+     * the same word twice and the operator cannot tell which is which.
+     *
+     * Recomputed from the path every time it is shown rather than read from
+     * what was stored, so pins made before this existed correct themselves.
+     */
+    private static String pinLabel(String decodedPath) {
+        if (decodedPath == null || decodedPath.isEmpty())
+            return "";
+        final String[] parts = decodedPath.replaceAll("/+$", "").split("/");
+        final String incident = com.atakmap.android.mapdepot.NifcClient
+                .incidentFolderOf(decodedPath);
+
+        int from = 0;
+        if (incident != null) {
+            for (int i = 0; i < parts.length; i++) {
+                if (incident.equals(parts[i])) {
+                    from = i;
+                    break;
+                }
+            }
+        } else {
+            from = Math.max(0, parts.length - 1);
+        }
+
+        final StringBuilder sb = new StringBuilder();
+        for (int i = from; i < parts.length; i++) {
+            if (parts[i].isEmpty())
+                continue;
+            // The year prefix is how the server files a fire, not what anyone
+            // calls it.
+            final String seg = i == from
+                    ? parts[i].replaceFirst("^\\d{4}[_\\-\\s]+", "")
+                    : parts[i];
+            if (sb.length() > 0)
+                sb.append(" \u203a ");
+            sb.append(pretty(seg));
+        }
+        return sb.length() == 0 ? pretty(decodedPath) : sb.toString();
+    }
+
+    /**
      * Where the operator is, written for reading rather than as a path.
      *
      * UASWFC's paths are rooted at the site, so they start with the server's own
@@ -2230,7 +2275,7 @@ public class MapDepot implements IPlugin {
                 final Pinned.Entry pin = (Pinned.Entry) item;
                 final int cyan = pluginContext.getResources()
                         .getColor(R.color.pin_cyan);
-                name.setText(pretty(pin.label));
+                name.setText(pinLabel(pin.decodedPath));
                 name.setTextColor(cyan);
                 detail.setText("Pinned");
                 detail.setTextColor(cyan);
