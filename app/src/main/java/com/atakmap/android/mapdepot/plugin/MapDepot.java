@@ -194,6 +194,7 @@ public class MapDepot implements IPlugin {
     private final List<Object> nifcAllRows = new ArrayList<>();
     private final List<Object> nifcRows = new ArrayList<>();
     private Button nifcFilter, nifcOutlines;
+    private Button forestOutlines;
     private Shown nifcShown = Shown.ALL;
 
     /** Progress for the row currently downloading, so it shows on the row. */
@@ -495,17 +496,19 @@ public class MapDepot implements IPlugin {
         nifcStatus = root.findViewById(R.id.nifc_status);
         nifcGaccButton = root.findViewById(R.id.nifc_gacc);
         cancelBarNifc = root.findViewById(R.id.cancel_bar_nifc);
+        forestOutlines = root.findViewById(R.id.forest_outlines);
+        forestOutlines.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleOutlines(forestStatus);
+            }
+        });
+
         nifcOutlines = root.findViewById(R.id.nifc_outlines);
         nifcOutlines.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                final Boolean on = PackageInstaller.outlinesVisible();
-                if (on == null || !PackageInstaller.setOutlinesVisible(
-                        !on.booleanValue())) {
-                    nifcStatus.setText("ATAK would not change the outlines");
-                    return;
-                }
-                refreshOutlinesButton();
+                toggleOutlines(nifcStatus);
             }
         });
 
@@ -1322,6 +1325,7 @@ public class MapDepot implements IPlugin {
     }
 
     private void applyForestFilter() {
+        refreshOutlinesButton();
         final String q = forestSearch.getText().toString().trim().toLowerCase();
 
         packageFilter.setText(labelFor(packageShown));
@@ -1651,22 +1655,40 @@ public class MapDepot implements IPlugin {
         });
     }
 
-    /**
-     * The outlines control reflects ATAK, not a state of our own: someone may
-     * have toggled them from the overlay manager since this panel was last
-     * looked at. Hidden entirely when this build has no such layer.
-     */
-    private void refreshOutlinesButton() {
-        if (nifcOutlines == null)
-            return;
+    /** One layer, so one toggle, wherever it is pressed from. */
+    private void toggleOutlines(TextView status) {
         final Boolean on = PackageInstaller.outlinesVisible();
-        if (on == null) {
-            nifcOutlines.setVisibility(View.GONE);
+        if (on == null || !PackageInstaller.setOutlinesVisible(
+                !on.booleanValue())) {
+            if (status != null)
+                status.setText("ATAK would not change the outlines");
             return;
         }
-        nifcOutlines.setVisibility(View.VISIBLE);
-        nifcOutlines.setText(pluginContext.getString(on.booleanValue()
-                ? R.string.outlines_on : R.string.outlines_off));
+        refreshOutlinesButton();
+    }
+
+    /**
+     * The outlines control reflects ATAK, not a state of our own: someone may
+     * have toggled them from the overlay manager, or from the other panel, since
+     * this one was last looked at. Hidden entirely when this build has no such
+     * layer.
+     */
+    private void refreshOutlinesButton() {
+        final Boolean on = PackageInstaller.outlinesVisible();
+        final String label = on == null ? null
+                : pluginContext.getString(on.booleanValue()
+                        ? R.string.outlines_on : R.string.outlines_off);
+        for (final Button b : new Button[] {
+                nifcOutlines, forestOutlines }) {
+            if (b == null)
+                continue;
+            if (label == null) {
+                b.setVisibility(View.GONE);
+                continue;
+            }
+            b.setVisibility(View.VISIBLE);
+            b.setText(label);
+        }
     }
 
     /**
