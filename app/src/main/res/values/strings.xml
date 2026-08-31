@@ -13,7 +13,6 @@
     <!-- Depot pane -->
     <string name="back">‹ Back</string>
     <string name="loading_catalog">Loading catalog…</string>
-    <string name="get">Get</string>
     <string name="cancel">Cancel</string>
     <string name="cancel_download">Cancel download</string>
     <string name="ok">OK</string>

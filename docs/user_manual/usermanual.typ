@@ -29,7 +29,7 @@ itself where ATAK expects to find it.
 #toolbox.side-by-side(columns: (4fr, 8fr))[
   #image("02.png", width: 78%)
 ][
-  Four kinds of data, each on its own page:
+  Six kinds of data, each on its own page:
 
   - *Elevation (DTED2)* -- terrain, by state or province. What viewsheds and
     elevation readouts need.
@@ -38,14 +38,18 @@ itself where ATAK expects to find it.
   - *Offline Public Lands* -- Forest Service vector basemaps, one per national
     forest or grassland, held on the device.
   - *Offline Ranger District Maps* -- the printed district maps, as GeoPDFs.
+  - *Incident Maps (NIFC)* -- the operational maps posted for a going fire:
+    ops, division, air operations, IR.
+  - *Drone IR Maps (UASWFC)* -- infrared products flown over a fire, as
+    georeferenced PDFs and KMZs.
 ]
 ]
 
 #tak-slide[
 = Getting map data
 
-Every page works the same way: a list of what is available, a *Get* button on
-each row, and a line at the top saying what is happening.
+Every page works the same way: a list of what is available, a *Download* button
+on each row, and a line at the top saying what is happening.
 
 #v(6pt)
 #toolbox.side-by-side(columns: (5fr, 7fr))[
@@ -54,7 +58,7 @@ each row, and a line at the top saying what is happening.
   Rows report one of three states, so the list doubles as an inventory of what
   the device already holds:
 
-  - *Get* -- none of it is here.
+  - *Download* -- none of it is here.
   - *Finish* -- some of it is. Only the missing part downloads.
   - *Remove* -- all of it is here.
 
@@ -245,6 +249,8 @@ indistinguishable from data put there by hand.
   - Streaming base maps → `atak/imagery/`, as map source files.
   - Offline public lands → `atak/imagery/`, as vector tile packages.
   - Ranger district maps → `atak/grg/`, as georeferenced PDFs.
+  - Incident and drone maps → `atak/grg/` for a PDF, `atak/overlays/` for a
+    KMZ.
 
   #v(6pt)
   Removing something through Map Depot tells ATAK first and deletes the file
@@ -257,9 +263,10 @@ indistinguishable from data put there by hand.
 #tak-slide[
 = What it needs
 
-- *Network* -- outbound HTTPS on port 443 only: to the map depot, and to the
-  public map server a chosen source belongs to. No inbound ports, and no TAK
-  server involvement.
+- *Network* -- outbound HTTPS on port 443 only: to the map depot, to the public
+  map server a chosen source belongs to, and -- for incident maps -- to
+  `ftp.wildfire.gov` and `uaswfc.org`. Both are public and need no account.
+  No inbound ports, and no TAK server involvement.
 
 - *Storage* -- enough free space for what you download. Map Depot checks
   before it starts and refuses rather than filling the device.

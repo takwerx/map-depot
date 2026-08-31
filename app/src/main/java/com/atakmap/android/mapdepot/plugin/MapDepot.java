@@ -1036,7 +1036,7 @@ public class MapDepot implements IPlugin {
                 new AlertDialog.Builder(hostContext())
                         .setTitle(region.name)
                         .setMessage(msg.toString())
-                        .setPositiveButton(pluginContext.getString(R.string.get),
+                        .setPositiveButton(pluginContext.getString(R.string.download),
                                 new DialogInterface.OnClickListener() {
                                     @Override
                                     public void onClick(DialogInterface d, int w) {
@@ -2319,7 +2319,7 @@ public class MapDepot implements IPlugin {
                         ? (int) (forestDone * 100L / forestTotal) : 0;
                 action.setText(pct + "%");
             } else {
-                action.setText(done ? R.string.remove : R.string.get);
+                action.setText(done ? R.string.remove : R.string.download);
             }
             if (unusable)
                 detail.setText(pkg.describe() + " · needs ATAK 5.7 or newer");
@@ -2374,7 +2374,7 @@ public class MapDepot implements IPlugin {
             // is cheap to undo -- the row goes straight back to Get.
             final boolean done = installedMaps.contains(map.id);
             action.setEnabled(true);
-            action.setText(done ? R.string.remove : R.string.get);
+            action.setText(done ? R.string.remove : R.string.download);
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -2435,7 +2435,7 @@ public class MapDepot implements IPlugin {
                 final boolean started = !done && region.held() > 0;
                 action.setEnabled(activeRegionId == null);
                 action.setText(done ? R.string.remove
-                        : started ? R.string.finish : R.string.get);
+                        : started ? R.string.finish : R.string.download);
             }
 
             final boolean held = region.fullyHeld()

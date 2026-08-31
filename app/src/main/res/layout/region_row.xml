@@ -64,6 +64,6 @@
         android:focusableInTouchMode="false"
         android:layout_gravity="center_vertical"
         android:minWidth="96dp"
-        android:text="@string/get" />
+        android:text="@string/download" />
 
 </LinearLayout>

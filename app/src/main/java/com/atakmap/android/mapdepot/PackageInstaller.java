@@ -706,17 +706,43 @@ public final class PackageInstaller {
         if (mv == null)
             return null;
         try {
-            final java.util.List<com.atakmap.map.layer.Layer> all =
-                    new java.util.ArrayList<>();
             for (com.atakmap.android.maps.MapView.RenderStack stack
-                    : com.atakmap.android.maps.MapView.RenderStack.values())
-                all.addAll(mv.getLayers(stack));
-            for (final com.atakmap.map.layer.Layer l : all) {
-                if (l != null && OUTLINES_LAYER.equals(l.getName()))
-                    return l;
+                    : com.atakmap.android.maps.MapView.RenderStack.values()) {
+                final com.atakmap.map.layer.Layer hit =
+                        findLayer(mv.getLayers(stack), 0);
+                if (hit != null)
+                    return hit;
             }
+            Log.w(TAG, "no layer named \"" + OUTLINES_LAYER + "\" is registered");
         } catch (LinkageError | RuntimeException notThisBuild) {
             Log.w(TAG, "no outlines layer on this build: " + notThisBuild);
+        }
+        return null;
+    }
+
+    /**
+     * The outlines layer is not at the top of a stack. GRGMapComponent builds a
+     * MultiLayer named "GRG", puts both the rasters and the outlines inside it,
+     * and registers only the MultiLayer with RASTER_OVERLAYS -- so a flat scan
+     * of the stacks finds the parent and never the child, and the control it
+     * feeds simply never appears.
+     */
+    private static com.atakmap.map.layer.Layer findLayer(
+            java.util.List<com.atakmap.map.layer.Layer> layers, int depth) {
+        if (layers == null || depth > 4)
+            return null;
+        for (final com.atakmap.map.layer.Layer l : layers) {
+            if (l == null)
+                continue;
+            if (OUTLINES_LAYER.equals(l.getName()))
+                return l;
+            if (l instanceof com.atakmap.map.layer.MultiLayer) {
+                final com.atakmap.map.layer.Layer hit = findLayer(
+                        ((com.atakmap.map.layer.MultiLayer) l).getLayers(),
+                        depth + 1);
+                if (hit != null)
+                    return hit;
+            }
         }
         return null;
     }
