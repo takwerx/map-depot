@@ -2129,9 +2129,11 @@ public class MapDepot implements IPlugin {
                 final Boolean visible = PackageInstaller.isVisible(posting);
                 if (visible != null) {
                     eye.setVisibility(View.VISIBLE);
+                    // Labelled with what pressing it does, not with the state
+                    // it is in: Hide while the map is up, Show while it is not.
                     eye.setText(pluginContext.getString(
-                            visible.booleanValue() ? R.string.shown
-                                    : R.string.hidden));
+                            visible.booleanValue() ? R.string.hide_map
+                                    : R.string.show_map));
                     eye.setOnClickListener(new View.OnClickListener() {
                         @Override
                         public void onClick(View v) {
