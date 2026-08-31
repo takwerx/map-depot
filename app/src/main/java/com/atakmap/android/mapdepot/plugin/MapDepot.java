@@ -2187,10 +2187,38 @@ public class MapDepot implements IPlugin {
             final TextView name = row.findViewById(R.id.region_name);
             final TextView detail = row.findViewById(R.id.region_detail);
             final Button action = row.findViewById(R.id.region_action);
+            final Button eye = row.findViewById(R.id.region_visible);
             final ProgressBar bar = row.findViewById(R.id.region_progress);
 
             final boolean active = pkg.id().equals(activeForestId);
             final boolean done = installedPackages.contains(pkg.id());
+
+            // Same Show/Hide the incident maps have. A district map is a PDF
+            // overlay like any other and there is no reason toggling it should
+            // mean a trip out to the overlay manager. Offered only where ATAK
+            // will answer, so a vector tile package -- which has no such handler
+            // -- simply does not show one.
+            eye.setVisibility(View.GONE);
+            if (done && !active) {
+                final Boolean visible = PackageInstaller.isVisible(pkg);
+                if (visible != null) {
+                    eye.setVisibility(View.VISIBLE);
+                    eye.setText(pluginContext.getString(
+                            visible.booleanValue() ? R.string.hide_map
+                                    : R.string.show_map));
+                    eye.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            if (PackageInstaller.setVisible(pkg,
+                                    !visible.booleanValue()))
+                                packageAdapter.notifyDataSetChanged();
+                            else
+                                forestStatus.setText("ATAK would not change "
+                                        + pkg.name());
+                        }
+                    });
+                }
+            }
 
             name.setText(pkg.name());
             if (done) {
