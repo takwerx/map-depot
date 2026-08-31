@@ -349,12 +349,33 @@
                 android:layout_weight="1" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/nifc_status"
+        <!-- Pinned above the list rather than in it, so it stays put while the
+             list scrolls. Outlines are a property of every GRG at once, not of
+             a row, which is why it does not live on one. -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:textSize="12sp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/nifc_outlines"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+
+            <TextView
+                android:id="@+id/nifc_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <Button
             style="@style/TakwerxButton"

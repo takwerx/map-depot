@@ -685,6 +685,68 @@ public final class PackageInstaller {
     }
 
     /**
+     * ATAK's GRG outlines layer -- the footprints drawn for every GRG on the
+     * device, not for any one map.
+     *
+     * Found by name across the render stacks rather than by reaching for
+     * GRGMapComponent, which a plugin has no handle on. GRGMapComponent calls it
+     * "GRG Outlines" and puts it with the vector overlays.
+     */
+    private static final String OUTLINES_LAYER = "GRG Outlines";
+
+    /**
+     * ATAK's own preference for the same thing, kept in step so the state
+     * survives a restart and matches what the overlay manager shows.
+     */
+    private static final String OUTLINES_PREF = "grgs.outlines-visible";
+
+    private static com.atakmap.map.layer.Layer outlinesLayer() {
+        final com.atakmap.android.maps.MapView mv =
+                com.atakmap.android.maps.MapView.getMapView();
+        if (mv == null)
+            return null;
+        try {
+            final java.util.List<com.atakmap.map.layer.Layer> all =
+                    new java.util.ArrayList<>();
+            for (com.atakmap.android.maps.MapView.RenderStack stack
+                    : com.atakmap.android.maps.MapView.RenderStack.values())
+                all.addAll(mv.getLayers(stack));
+            for (final com.atakmap.map.layer.Layer l : all) {
+                if (l != null && OUTLINES_LAYER.equals(l.getName()))
+                    return l;
+            }
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "no outlines layer on this build: " + notThisBuild);
+        }
+        return null;
+    }
+
+    /** Whether GRG outlines are drawn, or null when this build has no such layer. */
+    public static Boolean outlinesVisible() {
+        final com.atakmap.map.layer.Layer l = outlinesLayer();
+        return l == null ? null : Boolean.valueOf(l.isVisible());
+    }
+
+    public static boolean setOutlinesVisible(boolean visible) {
+        final com.atakmap.map.layer.Layer l = outlinesLayer();
+        if (l == null)
+            return false;
+        try {
+            l.setVisible(visible);
+            final com.atakmap.android.maps.MapView mv =
+                com.atakmap.android.maps.MapView.getMapView();
+            if (mv != null)
+                android.preference.PreferenceManager
+                        .getDefaultSharedPreferences(mv.getContext())
+                        .edit().putBoolean(OUTLINES_PREF, visible).apply();
+            return true;
+        } catch (RuntimeException notThisBuild) {
+            Log.w(TAG, "could not set outlines: " + notThisBuild);
+            return false;
+        }
+    }
+
+    /**
      * Whether ATAK is currently drawing this map, or {@code null} when it cannot
      * say -- the file is not installed, ATAK has not registered it yet, or this
      * build has no handler for that kind of file.

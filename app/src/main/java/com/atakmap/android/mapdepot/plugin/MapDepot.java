@@ -193,7 +193,7 @@ public class MapDepot implements IPlugin {
     /** Everything the folder holds; {@link #nifcRows} is this after filtering. */
     private final List<Object> nifcAllRows = new ArrayList<>();
     private final List<Object> nifcRows = new ArrayList<>();
-    private Button nifcFilter;
+    private Button nifcFilter, nifcOutlines;
     private Shown nifcShown = Shown.ALL;
 
     /** Progress for the row currently downloading, so it shows on the row. */
@@ -495,6 +495,20 @@ public class MapDepot implements IPlugin {
         nifcStatus = root.findViewById(R.id.nifc_status);
         nifcGaccButton = root.findViewById(R.id.nifc_gacc);
         cancelBarNifc = root.findViewById(R.id.cancel_bar_nifc);
+        nifcOutlines = root.findViewById(R.id.nifc_outlines);
+        nifcOutlines.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                final Boolean on = PackageInstaller.outlinesVisible();
+                if (on == null || !PackageInstaller.setOutlinesVisible(
+                        !on.booleanValue())) {
+                    nifcStatus.setText("ATAK would not change the outlines");
+                    return;
+                }
+                refreshOutlinesButton();
+            }
+        });
+
         nifcFilter = root.findViewById(R.id.nifc_filter);
         nifcFilter.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1638,6 +1652,24 @@ public class MapDepot implements IPlugin {
     }
 
     /**
+     * The outlines control reflects ATAK, not a state of our own: someone may
+     * have toggled them from the overlay manager since this panel was last
+     * looked at. Hidden entirely when this build has no such layer.
+     */
+    private void refreshOutlinesButton() {
+        if (nifcOutlines == null)
+            return;
+        final Boolean on = PackageInstaller.outlinesVisible();
+        if (on == null) {
+            nifcOutlines.setVisibility(View.GONE);
+            return;
+        }
+        nifcOutlines.setVisibility(View.VISIBLE);
+        nifcOutlines.setText(pluginContext.getString(on.booleanValue()
+                ? R.string.outlines_on : R.string.outlines_off));
+    }
+
+    /**
      * Applies the installed/available filter.
      *
      * Folders are never filtered out -- they are how the operator gets anywhere,
@@ -1694,6 +1726,8 @@ public class MapDepot implements IPlugin {
                 nifcRows.add(rebuilt);
             }
         }
+
+        refreshOutlinesButton();
 
         final int count = nifcShown == Shown.INSTALLED ? installed
                 : nifcShown == Shown.AVAILABLE ? available
