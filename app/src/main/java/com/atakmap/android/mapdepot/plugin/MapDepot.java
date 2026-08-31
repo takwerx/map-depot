@@ -25,13 +25,21 @@ import com.atakmap.android.maps.MapView;
 import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
+import com.atakmap.android.mapdepot.InstalledIndex;
+import com.atakmap.android.mapdepot.MapSource;
+import com.atakmap.android.mapdepot.NifcClient;
+import com.atakmap.android.mapdepot.UaswfcClient;
 import com.atakmap.android.mapdepot.PackageInstaller;
+import com.atakmap.android.mapdepot.Pinned;
 import com.atakmap.android.mapdepot.RegionInstaller;
 import com.atakmap.coremap.log.Log;
 
 import java.io.File;
 
+import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -165,6 +173,65 @@ public class MapDepot implements IPlugin {
     private Button categoryButton;
     private final Set<String> installedMaps = new HashSet<>();
 
+    // ------------------------------------------------------------------ NIFC
+    //
+    // A directory browser rather than a fixed set of screens, because the eleven
+    // GACCs do not agree on a layout and any wizard modelled on one of them is
+    // wrong for the others. The stack is what Back walks up; the GACC is the
+    // floor it stops at, so Back leaves the browser rather than stranding the
+    // operator at the top of the whole server.
+    private NifcClient nifc;
+    private UaswfcClient uaswfc;
+
+    /** Whichever archive the browser is currently showing. */
+    private MapSource source;
+
+    private View nifcView;
+    private ListView nifcList;
+    private TextView nifcStatus;
+    private Button nifcGaccButton, cancelBarNifc;
+    private NifcAdapter nifcAdapter;
+
+    /** Everything the folder holds; {@link #nifcRows} is this after filtering. */
+    private final List<Object> nifcAllRows = new ArrayList<>();
+    private final List<Object> nifcRows = new ArrayList<>();
+    private Button nifcFilter, nifcOutlines;
+    private Button forestOutlines;
+    private Shown nifcShown = Shown.ALL;
+
+    /**
+     * The row text colour as ATAK's theme sets it, taken from the first row
+     * inflated. A recycled row that was a pin has to be put back to this, and
+     * hardcoding white would quietly change every other row's appearance.
+     */
+    private android.content.res.ColorStateList rowTextColor;
+
+    /** Progress for the row currently downloading, so it shows on the row. */
+    private long nifcDone, nifcTotal;
+
+    /** How many entries the source withheld, kept for the status line. */
+    private int nifcHidden;
+    private final Deque<String[]> nifcStack = new ArrayDeque<>();
+    private final List<String> gaccPaths = new ArrayList<>();
+    private final List<String> gaccLabels = new ArrayList<>();
+
+    /** Encoded path for building URLs; decoded path for naming downloads. */
+    private String nifcPath = "";
+    private String nifcDecodedPath = "";
+
+    private String activePostingId;
+    private final Set<String> nifcInstalled = new HashSet<>();
+
+    /** Survives a plugin reload only on the host context -- see loadGacc(). */
+    /**
+     * Keyed per source, because the two archives do not cover the same ground:
+     * NIFC has all eleven GACCs and UASWFC currently only pacific_nw, so one
+     * remembered folder cannot serve both.
+     */
+    private String prefGaccKey() {
+        return "mapdepot_gacc_" + (source == null ? "nifc" : source.id());
+    }
+
     public MapDepot(IServiceController serviceController) {
         this.serviceController = serviceController;
 
@@ -181,7 +248,7 @@ public class MapDepot implements IPlugin {
                 pluginContext.getString(R.string.app_name),
                 MarshalManager.marshal(
                         pluginContext.getResources()
-                                .getDrawable(R.drawable.ic_launcher),
+                                .getDrawable(R.drawable.ic_toolbar),
                         android.graphics.drawable.Drawable.class,
                         gov.tak.api.commons.graphics.Bitmap.class))
                 .setListener(new ToolbarItemAdapter() {
@@ -224,7 +291,7 @@ public class MapDepot implements IPlugin {
                             pluginContext.getString(R.string.prefs_summary),
                             PREFS_KEY,
                             pluginContext.getResources().getDrawable(
-                                    R.drawable.ic_launcher),
+                                    R.drawable.ic_toolbar),
                             new MapDepotPreferenceFragment(pluginContext)));
         } catch (LinkageError | RuntimeException notThisBuild) {
             Log.w(TAG, "could not register preferences: " + notThisBuild);
@@ -433,6 +500,82 @@ public class MapDepot implements IPlugin {
                     }
                 });
 
+        nifcView = root.findViewById(R.id.nifc_view);
+        nifcList = root.findViewById(R.id.nifc_list);
+        nifcStatus = root.findViewById(R.id.nifc_status);
+        nifcGaccButton = root.findViewById(R.id.nifc_gacc);
+        cancelBarNifc = root.findViewById(R.id.cancel_bar_nifc);
+        forestOutlines = root.findViewById(R.id.forest_outlines);
+        forestOutlines.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleOutlines(forestStatus);
+            }
+        });
+
+        nifcOutlines = root.findViewById(R.id.nifc_outlines);
+        nifcOutlines.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleOutlines(nifcStatus);
+            }
+        });
+
+        nifcFilter = root.findViewById(R.id.nifc_filter);
+        nifcFilter.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                nifcShown = nextShown(nifcShown);
+                applyNifcFilter();
+            }
+        });
+        nifcAdapter = new NifcAdapter(pluginContext);
+        nifcList.setAdapter(nifcAdapter);
+
+        root.findViewById(R.id.btn_nifc).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (nifc == null)
+                            nifc = new NifcClient();
+                        showSource(nifc);
+                    }
+                });
+
+        root.findViewById(R.id.btn_uaswfc).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (uaswfc == null)
+                            uaswfc = new UaswfcClient();
+                        showSource(uaswfc);
+                    }
+                });
+
+        root.findViewById(R.id.btn_back_nifc).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        nifcBack();
+                    }
+                });
+
+        nifcGaccButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                chooseGacc();
+            }
+        });
+
+        cancelBarNifc.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (packages != null)
+                    packages.cancel();
+                cancelBarNifc.setVisibility(View.GONE);
+            }
+        });
+
         root.findViewById(R.id.btn_back_forests).setOnClickListener(
                 new View.OnClickListener() {
                     @Override
@@ -494,6 +637,7 @@ public class MapDepot implements IPlugin {
         dtedView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.GONE);
+        nifcView.setVisibility(View.GONE);
     }
 
     private void showPackages(PackageMode mode) {
@@ -502,6 +646,7 @@ public class MapDepot implements IPlugin {
         dtedView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.VISIBLE);
+        nifcView.setVisibility(View.GONE);
         forestSearch.setHint(mode == PackageMode.FORESTS
                 ? R.string.search_forests : R.string.search_recmaps);
         forestSearch.setText("");
@@ -511,7 +656,7 @@ public class MapDepot implements IPlugin {
         // installs and then exists nowhere ATAK can see it.
         if (mode == PackageMode.FORESTS
                 && !PackageInstaller.supportsVectorPackages())
-            forestStatus.setText(R.string.forests_need_57);
+            forestStatus.setText(pluginContext.getString(R.string.forests_need_57));
 
         if (!catalogLoaded)
             loadCatalog();
@@ -528,6 +673,7 @@ public class MapDepot implements IPlugin {
         homeView.setVisibility(View.GONE);
         dtedView.setVisibility(View.GONE);
         forestView.setVisibility(View.GONE);
+        nifcView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.VISIBLE);
         if (!catalogLoaded)
             loadCatalog();
@@ -540,6 +686,7 @@ public class MapDepot implements IPlugin {
         homeView.setVisibility(View.GONE);
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.GONE);
+        nifcView.setVisibility(View.GONE);
         dtedView.setVisibility(View.VISIBLE);
         if (!catalogLoaded)
             loadCatalog();
@@ -609,7 +756,8 @@ public class MapDepot implements IPlugin {
                 shown.add(r);
             }
         if (regionFilter != null)
-            regionFilter.setText(labelFor(regionShown));
+            regionFilter.setText(pluginContext.getString(labelFor(regionShown))
+                    + " (" + shown.size() + ")");
         adapter.notifyDataSetChanged();
     }
 
@@ -814,7 +962,7 @@ public class MapDepot implements IPlugin {
                 status.setText("Map Depot is not running — reload the plugin.");
             return;
         }
-        status.setText(R.string.loading_catalog);
+        status.setText(pluginContext.getString(R.string.loading_catalog));
         client.fetchCatalog(new DepotClient.CatalogCallback() {
             @Override
             public void onCatalog(List<Depot.Region> fetched, boolean cached) {
@@ -829,7 +977,7 @@ public class MapDepot implements IPlugin {
                 loadForests();
 
                 if (cached) {
-                    status.setText(R.string.catalog_offline);
+                    status.setText(pluginContext.getString(R.string.catalog_offline));
                 } else {
                     status.setText("");
                 }
@@ -898,7 +1046,7 @@ public class MapDepot implements IPlugin {
                 new AlertDialog.Builder(hostContext())
                         .setTitle(region.name)
                         .setMessage(msg.toString())
-                        .setPositiveButton(pluginContext.getString(R.string.get),
+                        .setPositiveButton(pluginContext.getString(R.string.download),
                                 new DialogInterface.OnClickListener() {
                                     @Override
                                     public void onClick(DialogInterface d, int w) {
@@ -960,6 +1108,12 @@ public class MapDepot implements IPlugin {
                 activeRegionId = null;
                 progressById.remove(region.id);
                 completeById.add(region.id);
+                // The scan is the authority on this screen, and it was only
+                // being re-run after a removal -- so a state that had just
+                // finished downloading still read "N MB to download" beside its
+                // Remove button, and did not appear under the Installed filter
+                // until the plugin was reopened.
+                measureRegions();
                 adapter.notifyDataSetChanged();
                 status.setText(String.format(
                         "%s installed — %d cells added, %d already held.",
@@ -1079,7 +1233,8 @@ public class MapDepot implements IPlugin {
         if (!categories.isEmpty())
             categoryButton.setText(categories.get(categoryIndex) + "  \u25be");
 
-        basemapFilter.setText(labelFor(mapShown));
+        basemapFilter.setText(pluginContext.getString(labelFor(mapShown))
+                + " (" + shownMaps.size() + ")");
 
         shownMaps.clear();
         for (Depot.BaseMap m : allMaps) {
@@ -1187,9 +1342,11 @@ public class MapDepot implements IPlugin {
     }
 
     private void applyForestFilter() {
+        refreshOutlinesButton();
         final String q = forestSearch.getText().toString().trim().toLowerCase();
 
-        packageFilter.setText(labelFor(packageShown));
+        packageFilter.setText(pluginContext.getString(labelFor(packageShown))
+                + " (" + shownPackages.size() + ")");
 
         shownPackages.clear();
         for (Depot.Package p : sourceList()) {
@@ -1322,6 +1479,1031 @@ public class MapDepot implements IPlugin {
         };
     }
 
+    // ------------------------------------------------------------------ NIFC
+
+    /**
+     * Opens the incident map browser at the operator's own GACC.
+     *
+     * The GACC is remembered rather than asked for every time -- a crew works one
+     * geographic area for a whole assignment -- but it is a button, not a
+     * one-time setting, because the next fire may be somewhere else.
+     */
+    private void showSource(MapSource wanted) {
+        homeView.setVisibility(View.GONE);
+        dtedView.setVisibility(View.GONE);
+        baseMapView.setVisibility(View.GONE);
+        forestView.setVisibility(View.GONE);
+        nifcView.setVisibility(View.VISIBLE);
+
+        // Switching archives starts over: the two do not share a path, and a
+        // half-walked NIFC folder means nothing to UASWFC.
+        final boolean switched = source == null
+                || !source.id().equals(wanted.id());
+        source = wanted;
+        if (switched) {
+            nifcStack.clear();
+            gaccPaths.clear();
+            gaccLabels.clear();
+            nifcRows.clear();
+            nifcAdapter.notifyDataSetChanged();
+        }
+
+        if (!nifcStack.isEmpty())
+            return;
+
+        final String remembered = loadGacc();
+        if (remembered == null || remembered.isEmpty()) {
+            nifcGaccButton.setText(pluginContext.getString(R.string.nifc_pick_gacc));
+            loadGaccList(true);
+        } else {
+            nifcGaccButton.setText(labelForPath(remembered));
+            if (gaccPaths.isEmpty())
+                loadGaccList(false);
+            browse(remembered, decodeSegment(remembered), Nav.ROOT);
+        }
+    }
+
+    /**
+     * The GACC list comes from the server rather than a compiled-in list, so a
+     * region added or renamed upstream appears without a plugin release.
+     *
+     * @param thenPrompt open the chooser as soon as it arrives, for an operator
+     *        who has not picked one yet
+     */
+    private void loadGaccList(final boolean thenPrompt) {
+        nifcStatus.setText(pluginContext.getString(R.string.nifc_loading));
+        source.list("", new MapSource.ListingCallback() {
+            @Override
+            public void onListing(String path, List<MapSource.Entry> entries,
+                    int hidden) {
+                gaccPaths.clear();
+                gaccLabels.clear();
+                for (final MapSource.Entry e : entries) {
+                    if (!e.directory)
+                        continue;
+                    gaccPaths.add(e.href);
+                    gaccLabels.add(prettyGacc(e.name));
+                }
+                nifcStatus.setText("");
+                if (thenPrompt)
+                    chooseGacc();
+            }
+
+            @Override
+            public void onError(String message) {
+                nifcStatus.setText("Could not reach NIFC: " + message);
+            }
+        });
+    }
+
+    /**
+     * A button opening a chooser, never a Spinner: a Spinner's dropdown is a
+     * Dialog built from the context that inflated it, and on the plugin context
+     * that is a BadTokenException that takes ATAK down with it.
+     */
+    private void chooseGacc() {
+        if (gaccPaths.isEmpty()) {
+            loadGaccList(true);
+            return;
+        }
+        final String[] items = gaccLabels.toArray(new String[0]);
+        final String current = loadGacc();
+        int checked = -1;
+        for (int i = 0; i < gaccPaths.size(); i++) {
+            if (gaccPaths.get(i).equals(current))
+                checked = i;
+        }
+        new AlertDialog.Builder(hostContext())
+                .setTitle(pluginContext.getString(R.string.nifc_pick_gacc))
+                .setSingleChoiceItems(items, checked,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                d.dismiss();
+                                final String path = gaccPaths.get(which);
+                                saveGacc(path);
+                                nifcGaccButton.setText(gaccLabels.get(which));
+                                nifcStack.clear();
+                                browse(path, decodeSegment(path), Nav.ROOT);
+                            }
+                        })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * How the browser arrived at a folder, which decides what happens to the
+     * history. One boolean used to do this and got Back wrong: going back
+     * cleared the whole stack, so the first Back worked and the second left the
+     * panel entirely.
+     */
+    private enum Nav {
+        /** A step deeper. Remember where we were. */
+        DESCEND,
+        /** A new starting point. Forget everything above it. */
+        ROOT,
+        /** A step back out. The entry was already popped. */
+        BACK
+    }
+
+    private void browse(final String encodedPath, final String decodedPath,
+            final Nav nav) {
+        if (nav == Nav.ROOT)
+            nifcStack.clear();
+        else if (nav == Nav.DESCEND)
+            nifcStack.push(new String[] {
+                    nifcPath, nifcDecodedPath
+            });
+
+        nifcPath = encodedPath;
+        nifcDecodedPath = decodedPath;
+        nifcRows.clear();
+        nifcAdapter.notifyDataSetChanged();
+        nifcStatus.setText(pluginContext.getString(R.string.nifc_loading));
+
+        source.list(encodedPath, new MapSource.ListingCallback() {
+            @Override
+            public void onListing(String path, List<MapSource.Entry> entries,
+                    int hidden) {
+                // A listing that arrives after the operator has moved on is not
+                // an error, but it must not overwrite where they are now.
+                if (!path.equals(nifcPath))
+                    return;
+
+                nifcAllRows.clear();
+
+                // Pinned fires ride at the top of the first screen only. Deeper
+                // in, the operator has already arrived somewhere and a shortcut
+                // back to the top of a different fire is just noise.
+                if (nifcStack.isEmpty()) {
+                    for (final Pinned.Entry pin : Pinned.all(source.id())) {
+                        if (!pin.path.equals(path))
+                            nifcAllRows.add(pin);
+                    }
+                }
+
+                final List<MapSource.Entry> folders = new ArrayList<>();
+                for (final MapSource.Entry e : entries) {
+                    if (e.directory)
+                        folders.add(e);
+                }
+                nifcAllRows.addAll(newestFirst(folders));
+
+                final List<MapSource.Posting> postings =
+                        source.postingsFor(entries, path, decodedPath);
+
+                // Asked of the disk, not remembered, so it is still right after
+                // ATAK has been closed and reopened -- and after a map has been
+                // deleted outside the plugin.
+                //
+                // Checked by URL first: a map downloaded under an older naming
+                // rule sits on disk under a name today's rules would not
+                // produce, and a name-only check would offer to download it all
+                // over again. Where the index knows it, the row takes the name
+                // the file actually has, so Remove and "go there" reach it.
+                final List<Object> resolved = new ArrayList<>();
+                for (final MapSource.Posting posting : postings) {
+                    final InstalledIndex.Record known =
+                            InstalledIndex.byUrl(posting.url());
+                    MapSource.Posting row = posting;
+                    if (known != null && known.file().isFile()
+                            && !known.installName.equals(posting.name()))
+                        row = new MapSource.Posting(posting.url(),
+                                posting.originalName(), known.installName,
+                                posting.bytes(), posting.describe());
+
+                    if (known != null && known.file().isFile()
+                            || PackageInstaller.isInstalled(row))
+                        nifcInstalled.add(row.id());
+                    else
+                        nifcInstalled.remove(row.id());
+                    resolved.add(row);
+                }
+                nifcAllRows.addAll(resolved);
+
+                nifcHidden = hidden;
+                applyNifcFilter();
+                nifcList.setSelectionAfterHeaderView();
+            }
+
+            @Override
+            public void onError(String message) {
+                if (!encodedPath.equals(nifcPath))
+                    return;
+                nifcStatus.setText("Could not read that folder: " + message);
+            }
+        });
+    }
+
+    /** One layer, so one toggle, wherever it is pressed from. */
+    private void toggleOutlines(TextView status) {
+        final Boolean on = PackageInstaller.outlinesVisible();
+        if (on == null || !PackageInstaller.setOutlinesVisible(
+                !on.booleanValue())) {
+            if (status != null)
+                status.setText("ATAK would not change the outlines");
+            return;
+        }
+        refreshOutlinesButton();
+    }
+
+    /**
+     * The outlines control reflects ATAK, not a state of our own: someone may
+     * have toggled them from the overlay manager, or from the other panel, since
+     * this one was last looked at. Hidden entirely when this build has no such
+     * layer.
+     */
+    private void refreshOutlinesButton() {
+        final Boolean on = PackageInstaller.outlinesVisible();
+        final String label = on == null ? null
+                : pluginContext.getString(on.booleanValue()
+                        ? R.string.outlines_on : R.string.outlines_off);
+        for (final Button b : new Button[] {
+                nifcOutlines, forestOutlines }) {
+            if (b == null)
+                continue;
+            if (label == null) {
+                b.setVisibility(View.GONE);
+                continue;
+            }
+            b.setVisibility(View.VISIBLE);
+            b.setText(label);
+        }
+    }
+
+    /**
+     * Applies the installed/available filter.
+     *
+     * Folders are never filtered out -- they are how the operator gets anywhere,
+     * and a folder is neither installed nor available.
+     */
+    private void applyNifcFilter() {
+        nifcRows.clear();
+
+        // Everything installed at or below where the operator is standing, so
+        // the top of an archive shows the lot and it narrows as they walk down.
+        // A fire's folder is mostly subfolders, so without this "Installed" had
+        // nothing to count and showed an empty list beside a full device.
+        final List<InstalledIndex.Record> below = InstalledIndex.under(
+                source == null ? null : source.id(), nifcDecodedPath);
+
+        final java.util.Set<String> indexed = new HashSet<>();
+        for (final InstalledIndex.Record r : below)
+            indexed.add(InstalledIndex.lower(r.installName));
+
+        int installed = below.size(), available = 0;
+        final java.util.Set<String> listedHere = new HashSet<>();
+
+        for (final Object o : nifcAllRows) {
+            // Folders and pins are how the operator gets anywhere. Neither is
+            // installed or available, so neither is ever filtered out.
+            if (o instanceof MapSource.Entry || o instanceof Pinned.Entry) {
+                nifcRows.add(o);
+                continue;
+            }
+            final MapSource.Posting posting = (MapSource.Posting) o;
+            final boolean have = nifcInstalled.contains(posting.id());
+            if (have) {
+                listedHere.add(InstalledIndex.lower(posting.name()));
+                // Downloaded before the index existed, so it is on the device
+                // but not remembered. Counted here rather than going missing.
+                if (!indexed.contains(InstalledIndex.lower(posting.name())))
+                    installed++;
+            } else {
+                available++;
+            }
+            if (nifcShown == Shown.ALL
+                    || (nifcShown == Shown.INSTALLED && have)
+                    || (nifcShown == Shown.AVAILABLE && !have))
+                nifcRows.add(posting);
+        }
+
+        // The installed maps from deeper folders, which this listing has no rows
+        // for. Shown with the folder they came from rather than a size, since
+        // that is what tells two days of the same fire apart.
+        if (nifcShown == Shown.INSTALLED) {
+            for (final InstalledIndex.Record r : below) {
+                if (listedHere.contains(InstalledIndex.lower(r.installName)))
+                    continue;
+                final MapSource.Posting rebuilt = InstalledIndex.toPosting(r);
+                nifcInstalled.add(rebuilt.id());
+                nifcRows.add(rebuilt);
+            }
+        }
+
+        refreshOutlinesButton();
+
+        final int count = nifcShown == Shown.INSTALLED ? installed
+                : nifcShown == Shown.AVAILABLE ? available
+                        : installed + available;
+        nifcFilter.setText(pluginContext.getString(labelFor(nifcShown))
+                + " (" + count + ")");
+        nifcAdapter.notifyDataSetChanged();
+        describeListing(nifcHidden);
+    }
+
+    /**
+     * Says what is on screen and, as importantly, what is not: a folder holding
+     * geodatabase zips alongside two PDFs would otherwise look like a folder
+     * holding two files.
+     */
+    private void describeListing(int hidden) {
+        int folders = 0, maps = 0, pins = 0;
+        for (final Object o : nifcRows) {
+            if (o instanceof Pinned.Entry)
+                pins++;
+            else if (o instanceof MapSource.Entry)
+                folders++;
+            else
+                maps++;
+        }
+        final StringBuilder sb = new StringBuilder();
+        final String where = breadcrumb(nifcDecodedPath);
+        if (!where.isEmpty())
+            sb.append(where).append('\n');
+        if (folders == 0 && maps == 0) {
+            // "Nothing posted here" is a lie when the folder is full and the
+            // filter is hiding all of it. Say which it is, and how to undo it.
+            int filteredOut = 0;
+            for (final Object o : nifcAllRows) {
+                if (o instanceof MapSource.Posting)
+                    filteredOut++;
+            }
+            if (filteredOut > 0 && nifcShown != Shown.ALL) {
+                sb.append(filteredOut)
+                        .append(filteredOut == 1 ? " map here, hidden by the "
+                                : " maps here, hidden by the ")
+                        .append(pluginContext.getString(labelFor(nifcShown)))
+                        .append(" filter");
+            } else {
+                sb.append(pluginContext.getString(R.string.nifc_empty));
+            }
+        } else {
+            if (folders > 0)
+                sb.append(folders).append(folders == 1 ? " folder" : " folders");
+            if (folders > 0 && maps > 0)
+                sb.append(", ");
+            if (maps > 0)
+                sb.append(maps).append(maps == 1 ? " map" : " maps");
+        }
+        if (hidden > 0)
+            sb.append("  ·  ").append(hidden)
+                    .append(hidden == 1 ? " other file hidden"
+                            : " other files hidden");
+        nifcStatus.setText(sb.toString());
+    }
+
+    /**
+     * Date-named folders newest first; everything else left as the server had it.
+     *
+     * A fire's IR and GIS folders are one directory per day, and the server
+     * lists them ascending, so the map an operator almost always wants -- today's
+     * -- is at the bottom of a scroll that grows for as long as the fire burns.
+     * Folders that are not dates (a fire's name, DAILY MAP PRODUCT, IAP) keep
+     * their order, where alphabetical is what is wanted.
+     */
+    private static List<MapSource.Entry> newestFirst(
+            List<MapSource.Entry> folders) {
+
+        final List<MapSource.Entry> dated = new ArrayList<>();
+        final List<MapSource.Entry> rest = new ArrayList<>();
+        for (final MapSource.Entry e : folders) {
+            if (DATE_FOLDER.matcher(e.name).matches())
+                dated.add(e);
+            else
+                rest.add(e);
+        }
+        java.util.Collections.sort(dated, new java.util.Comparator<MapSource.Entry>() {
+            @Override
+            public int compare(MapSource.Entry a, MapSource.Entry b) {
+                return digitsOf(b.name).compareTo(digitsOf(a.name));
+            }
+        });
+        final List<MapSource.Entry> out = new ArrayList<>(dated);
+        out.addAll(rest);
+        return out;
+    }
+
+    private static String digitsOf(String s) {
+        return s.replaceAll("[^0-9]", "");
+    }
+
+    /** {@code 20260729}, and the separated spellings of the same thing. */
+    private static final java.util.regex.Pattern DATE_FOLDER =
+            java.util.regex.Pattern.compile("^\\d{4}[-_.]?\\d{2}[-_.]?\\d{2}$");
+
+    /**
+     * What to call a pin: the fire, and how far into it the pin sits.
+     *
+     * A pin on the fire itself is just "Timber", but one on Timber's Products
+     * folder is "Timber > Products" -- otherwise two pins on the same fire are
+     * the same word twice and the operator cannot tell which is which.
+     *
+     * Recomputed from the path every time it is shown rather than read from
+     * what was stored, so pins made before this existed correct themselves.
+     */
+    private static String pinLabel(String decodedPath) {
+        if (decodedPath == null || decodedPath.isEmpty())
+            return "";
+        final String[] parts = decodedPath.replaceAll("/+$", "").split("/");
+        final String incident = com.atakmap.android.mapdepot.NifcClient
+                .incidentFolderOf(decodedPath);
+
+        int from = 0;
+        if (incident != null) {
+            for (int i = 0; i < parts.length; i++) {
+                if (incident.equals(parts[i])) {
+                    from = i;
+                    break;
+                }
+            }
+        } else {
+            from = Math.max(0, parts.length - 1);
+        }
+
+        final StringBuilder sb = new StringBuilder();
+        for (int i = from; i < parts.length; i++) {
+            if (parts[i].isEmpty())
+                continue;
+            // The year prefix is how the server files a fire, not what anyone
+            // calls it.
+            final String seg = i == from
+                    ? parts[i].replaceFirst("^\\d{4}[_\\-\\s]+", "")
+                    : parts[i];
+            if (sb.length() > 0)
+                sb.append(" \u203a ");
+            sb.append(pretty(seg));
+        }
+        return sb.length() == 0 ? pretty(decodedPath) : sb.toString();
+    }
+
+    /**
+     * Where the operator is, written for reading rather than as a path.
+     *
+     * UASWFC's paths are rooted at the site, so they start with the server's own
+     * "ftp" directory -- plumbing the operator did not ask about and which read
+     * as lowercase noise at the top of the panel.
+     */
+    private static String breadcrumb(String decodedPath) {
+        if (decodedPath == null || decodedPath.isEmpty())
+            return "";
+        final StringBuilder sb = new StringBuilder();
+        for (final String seg : decodedPath.split("/")) {
+            if (seg.isEmpty() || "ftp".equalsIgnoreCase(seg))
+                continue;
+            if (sb.length() > 0)
+                sb.append(" \u203a ");
+            sb.append(pretty(seg));
+        }
+        return sb.toString();
+    }
+
+    /** Back walks up the stack, and leaves the browser at the GACC. */
+    private void nifcBack() {
+        if (nifcStack.isEmpty()) {
+            showHome();
+            return;
+        }
+        final String[] previous = nifcStack.pop();
+        // Re-listing rather than caching: a fire's folder gains files during the
+        // day, and a stale list is worse here than a second of loading.
+        browse(previous[0], previous[1], Nav.BACK);
+    }
+
+    /**
+     * The real size first. The listing's "4.6M" is Apache rounding, and the
+     * installer treats a length mismatch as a corrupt download -- so handing it
+     * the rounded figure would fail every install.
+     */
+    private void confirmAndInstallPosting(final MapSource.Posting posting) {
+        if (activePostingId != null) {
+            toast("Already downloading — let it finish first.");
+            return;
+        }
+        nifcStatus.setText("Checking size…");
+        source.exactSize(posting, new MapSource.SizeCallback() {
+            @Override
+            public void onSize(long bytes) {
+                posting.setBytes(bytes);
+                promptForPosting(posting, bytes);
+            }
+
+            @Override
+            public void onError(String message) {
+                // Not fatal: zero simply means the installer skips the space
+                // estimate and the length check rather than refusing to try.
+                Log.w(TAG, "no content length for " + posting.name() + ": "
+                        + message);
+                posting.setBytes(0L);
+                promptForPosting(posting, 0L);
+            }
+        });
+    }
+
+    private void promptForPosting(final MapSource.Posting posting, long bytes) {
+        final String size = bytes > 0 ? Depot.bytes(bytes) : "an unknown size";
+        new AlertDialog.Builder(hostContext())
+                .setTitle(posting.name())
+                .setMessage("Download " + size + " from "
+                        + (source == null ? "the archive" : source.label())
+                        + "?\n\nPosted as " + posting.originalName())
+                .setPositiveButton(pluginContext.getString(R.string.download),
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                installPosting(posting);
+                            }
+                        })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * A freshly downloaded map is not in ATAK's list the instant the download
+     * ends -- the scan takes as long as it takes. Say so, rather than letting
+     * the tap look broken.
+     */
+    /**
+     * Waits for ATAK to register a freshly installed map, then redraws the row.
+     *
+     * The Show/Hide control is only offered once ATAK will answer about
+     * visibility, and that was only ever checked when a folder was listed -- so a
+     * map you had just downloaded had no button until you left the folder and
+     * came back. Registration takes a few seconds; this asks until it does,
+     * then stops.
+     */
+    private void awaitVisibility(final MapSource.Posting posting,
+            final int attemptsLeft) {
+        if (attemptsLeft <= 0 || posting == null)
+            return;
+        if (PackageInstaller.isVisible(posting) != null) {
+            nifcAdapter.notifyDataSetChanged();
+            return;
+        }
+        nifcList.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                awaitVisibility(posting, attemptsLeft - 1);
+            }
+        }, 1000L);
+    }
+
+    private void goToPosting(final MapSource.Posting posting) {
+        PackageInstaller.goTo(posting, new PackageInstaller.GoTo() {
+            @Override
+            public void onGoing(Depot.Package p) {
+                nifcStatus.setText("Going to " + p.name());
+            }
+
+            @Override
+            public void onWaiting(Depot.Package p) {
+                nifcStatus.setText("Adding to the map list…");
+            }
+
+            @Override
+            public void onUnavailable(Depot.Package p, String why) {
+                nifcStatus.setText("Could not go there: " + why);
+            }
+        });
+    }
+
+    /**
+     * Removing from here rather than from ATAK's overlay manager is the safe
+     * path, and not only the convenient one: {@code PackageInstaller.retire}
+     * hands ATAK a delete and lets it unload the layer *before* the file goes,
+     * which is the opposite of the overlay manager's own order. Deleting a GRG
+     * there leaves the tile reader holding a path that no longer exists, and
+     * disposing it dereferences a freed GDAL dataset.
+     */
+    private void confirmAndRemovePosting(final MapSource.Posting posting) {
+        new AlertDialog.Builder(hostContext())
+                .setTitle(posting.name())
+                .setMessage("Remove this map from the device?")
+                .setPositiveButton(pluginContext.getString(R.string.remove),
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                removePosting(posting);
+                            }
+                        })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void removePosting(final MapSource.Posting posting) {
+        nifcStatus.setText("Removing " + posting.name() + "…");
+        packages.uninstall(posting, new PackageInstaller.Callback() {
+            @Override
+            public void onProgress(Depot.Package p, long done, long total) {
+            }
+
+            @Override
+            public void onInstalled(Depot.Package p, File dest) {
+            }
+
+            @Override
+            public void onRemoved(Depot.Package p) {
+                nifcInstalled.remove(p.id());
+                InstalledIndex.remove(posting.name(), posting.destination());
+                applyNifcFilter();
+                nifcStatus.setText(p.name() + " removed.");
+            }
+
+            @Override
+            public void onError(Depot.Package p, String message) {
+                Log.w(TAG, "removing " + p.id() + ": " + message);
+                nifcStatus.setText("Could not remove " + p.name()
+                        + ": " + message);
+            }
+        });
+    }
+
+    private void installPosting(final MapSource.Posting posting) {
+        activePostingId = posting.id();
+        nifcDone = 0;
+        nifcTotal = posting.bytes();
+        nifcStatus.setText("Getting " + posting.name() + "…");
+        cancelBarNifc.setVisibility(View.VISIBLE);
+        nifcAdapter.notifyDataSetChanged();
+        packages.install(posting, new PackageInstaller.Callback() {
+            @Override
+            public void onProgress(Depot.Package p, long done, long total) {
+                nifcDone = done;
+                nifcTotal = total;
+                nifcStatus.setText(p.name() + " — " + Depot.bytes(done)
+                        + " of " + Depot.bytes(total));
+                nifcAdapter.notifyDataSetChanged();
+            }
+
+            @Override
+            public void onInstalled(Depot.Package p, File dest) {
+                activePostingId = null;
+                nifcDone = nifcTotal = 0;
+                cancelBarNifc.setVisibility(View.GONE);
+                nifcInstalled.add(p.id());
+                // Written down here because the file itself cannot say where it
+                // came from: grg/ is flat and holds only a name.
+                InstalledIndex.add(new InstalledIndex.Record(
+                        source.id(), nifcDecodedPath, posting.url(),
+                        posting.originalName(), posting.name(),
+                        posting.destination(), posting.bytes()));
+                applyNifcFilter();
+                nifcStatus.setText(p.name()
+                        + " installed — tap it to go there.");
+                // ATAK has the file but has not registered it yet; the row's
+                // Show/Hide appears as soon as it has.
+                awaitVisibility(posting, 30);
+            }
+
+            @Override
+            public void onRemoved(Depot.Package p) {
+                nifcInstalled.remove(p.id());
+                nifcAdapter.notifyDataSetChanged();
+            }
+
+            @Override
+            public void onError(Depot.Package p, String message) {
+                activePostingId = null;
+                nifcDone = nifcTotal = 0;
+                cancelBarNifc.setVisibility(View.GONE);
+                nifcAdapter.notifyDataSetChanged();
+                if (PackageInstaller.CANCELLED.equals(message)) {
+                    nifcStatus.setText(p.name() + " cancelled — nothing kept.");
+                    return;
+                }
+                Log.w(TAG, "nifc " + p.id() + ": " + message);
+                nifcStatus.setText(p.name() + " failed: " + message);
+            }
+        });
+    }
+
+    // ---- small helpers
+
+    private String loadGacc() {
+        final MapView mv = MapView.getMapView();
+        if (mv == null)
+            return null;
+        return android.preference.PreferenceManager
+                .getDefaultSharedPreferences(mv.getContext())
+                .getString(prefGaccKey(), null);
+    }
+
+    /**
+     * Written to ATAK's own preferences on the host context, not the plugin's:
+     * the plugin context's preferences do not survive a plugin reload, and a
+     * remembered GACC that forgets itself on every update is worse than none.
+     */
+    private void saveGacc(String path) {
+        final MapView mv = MapView.getMapView();
+        if (mv == null)
+            return;
+        android.preference.PreferenceManager
+                .getDefaultSharedPreferences(mv.getContext())
+                .edit().putString(prefGaccKey(), path).apply();
+    }
+
+    private String labelForPath(String path) {
+        for (int i = 0; i < gaccPaths.size(); i++) {
+            if (gaccPaths.get(i).equals(path))
+                return gaccLabels.get(i);
+        }
+        return prettyGacc(decodeSegment(path));
+    }
+
+    /**
+     * Words that are initials rather than words, and look wrong title-cased.
+     * "Pacific Nw" was the one that prompted this; the rest are the same
+     * mistake waiting in a folder name.
+     */
+    private static final java.util.Set<String> ACRONYM =
+            new HashSet<>(Arrays.asList(
+                    "N", "S", "E", "W", "NW", "NE", "SW", "SE",
+                    "IR", "GIS", "IAP", "UAS", "FTP", "QR", "PDF", "KMZ",
+                    "USFS", "BLM", "NPS", "DPA", "GACC", "NIFC", "UASWFC",
+                    "AM", "PM", "DIV", "MP", "US", "USA"));
+
+    /**
+     * A folder name as a person would write it: {@code pacific_nw} to
+     * "Pacific NW", {@code calif_n} to "Calif N", {@code DAILY MAP PRODUCT}
+     * left alone.
+     */
+    static String pretty(String raw) {
+        if (raw == null)
+            return "";
+        final String cleaned = raw.replace('/', ' ').replace('_', ' ').trim();
+        final StringBuilder sb = new StringBuilder();
+        for (final String w : cleaned.split("\\s+")) {
+            if (w.isEmpty())
+                continue;
+            if (sb.length() > 0)
+                sb.append(' ');
+            final String upper = w.toUpperCase(java.util.Locale.US);
+            if (ACRONYM.contains(upper)) {
+                sb.append(upper);
+                continue;
+            }
+            // Already shouting, or already mixed on purpose -- leave it.
+            if (w.equals(upper) && w.length() > 1) {
+                sb.append(w);
+                continue;
+            }
+            sb.append(Character.toUpperCase(w.charAt(0)));
+            if (w.length() > 1)
+                sb.append(w.substring(1));
+        }
+        return sb.length() == 0 ? raw : sb.toString();
+    }
+
+    /**
+     * A region's name for the button. Drops the same {@code ftp} segment the
+     * breadcrumb drops -- UASWFC's paths are rooted at the site, so without this
+     * the control an operator presses most reads "FTP Pacific NW".
+     */
+    private static String prettyGacc(String raw) {
+        if (raw == null)
+            return "";
+        final StringBuilder sb = new StringBuilder();
+        for (final String seg : raw.split("/")) {
+            if (seg.isEmpty() || "ftp".equalsIgnoreCase(seg))
+                continue;
+            if (sb.length() > 0)
+                sb.append(' ');
+            sb.append(pretty(seg));
+        }
+        return sb.length() == 0 ? pretty(raw) : sb.toString();
+    }
+
+    private static String decodeSegment(String encoded) {
+        try {
+            return java.net.URLDecoder.decode(encoded, "UTF-8");
+        } catch (Exception notEncoded) {
+            return encoded;
+        }
+    }
+
+    /**
+     * Folders and maps in one list.
+     *
+     * The row's own click listener does the work rather than the ListView's:
+     * a row containing a Button stops firing OnItemClickListener entirely, which
+     * reads exactly like a dead list.
+     */
+    private final class NifcAdapter extends ArrayAdapter<Object> {
+
+        NifcAdapter(Context ctx) {
+            super(ctx, 0, nifcRows);
+        }
+
+        @Override
+        public View getView(int position, View convert, ViewGroup parent) {
+            View row = convert;
+            if (row == null)
+                row = LayoutInflater.from(pluginContext)
+                        .inflate(R.layout.region_row, parent, false);
+
+            final Object item = getItem(position);
+            if (row == null || item == null)
+                return row;
+
+            final TextView name = row.findViewById(R.id.region_name);
+            final TextView detail = row.findViewById(R.id.region_detail);
+            final Button action = row.findViewById(R.id.region_action);
+            final Button eye = row.findViewById(R.id.region_visible);
+            final ProgressBar bar = row.findViewById(R.id.region_progress);
+            bar.setVisibility(View.GONE);
+            eye.setVisibility(View.GONE);
+
+            // Rows are recycled, so a colour set on one has to be taken off the
+            // next -- otherwise a folder inherits the cyan of a pin that used to
+            // occupy the same view.
+            if (rowTextColor == null)
+                rowTextColor = name.getTextColors();
+            name.setTextColor(rowTextColor);
+            detail.setTextColor(rowTextColor);
+
+            if (item instanceof Pinned.Entry) {
+                // A pinned fire, shown at the top of the source. It jumps
+                // straight to the folder rather than walking down to it.
+                final Pinned.Entry pin = (Pinned.Entry) item;
+                final int cyan = pluginContext.getResources()
+                        .getColor(R.color.pin_cyan);
+                name.setText(pinLabel(pin.decodedPath));
+                name.setTextColor(cyan);
+                detail.setText("Pinned");
+                detail.setTextColor(cyan);
+                action.setVisibility(View.VISIBLE);
+                action.setEnabled(true);
+                action.setText(pluginContext.getString(R.string.remove));
+                action.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        Pinned.unpin(pin.sourceId, pin.path);
+                        browse(nifcPath, nifcDecodedPath, Nav.BACK);
+                    }
+                });
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        browse(pin.path, pin.decodedPath, Nav.DESCEND);
+                    }
+                });
+                return row;
+            }
+
+            if (item instanceof MapSource.Entry) {
+                final MapSource.Entry e = (MapSource.Entry) item;
+                final String childPath = source.childPath(nifcPath, e);
+                final String childDecoded = join(nifcDecodedPath, e.name);
+                final boolean isPinned = Pinned.isPinned(source.id(), childPath);
+
+                name.setText(breakable(pretty(e.name)));
+                detail.setText("Folder");
+
+                // Pin lives on the folder row because that is where the operator
+                // is looking when they decide this is the fire they are working.
+                action.setVisibility(View.VISIBLE);
+                action.setEnabled(true);
+                action.setText(pluginContext.getString(
+                        isPinned ? R.string.pinned : R.string.pin));
+                action.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (isPinned)
+                            Pinned.unpin(source.id(), childPath);
+                        else
+                            Pinned.pin(new Pinned.Entry(source.id(), childPath,
+                                    childDecoded,
+                                    Pinned.labelFor(childDecoded)));
+                        nifcAdapter.notifyDataSetChanged();
+                    }
+                });
+
+                row.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        browse(childPath, childDecoded, Nav.DESCEND);
+                    }
+                });
+                return row;
+            }
+
+            final MapSource.Posting posting = (MapSource.Posting) item;
+            final boolean done = nifcInstalled.contains(posting.id());
+            final boolean active = posting.id().equals(activePostingId);
+
+            name.setText(breakable(posting.name()));
+
+            if (done) {
+                // Only the hint is coloured; the size stays the same weight as
+                // every other row, so the list does not turn into a christmas
+                // tree once a few maps are installed.
+                //
+                // The original filename comes off once it is installed: it is
+                // there to help choose what to download, and afterwards it only
+                // pushes the line to a third wrap and crowds the buttons.
+                // Its own line, deliberately. Appended to the size and the
+                // folder it came from, it wrapped anyway -- and a wrap lands
+                // wherever the width runs out rather than where it reads well.
+                final String hint = "\ntap to go there";
+                final String detailText = posting.describe()
+                        .replaceAll("\\s+·\\s+[^·]+\\.(pdf|kmz)$", "");
+                final SpannableString line =
+                        new SpannableString(detailText + hint);
+                line.setSpan(
+                        new ForegroundColorSpan(pluginContext.getResources()
+                                .getColor(R.color.action_green)),
+                        line.length() - hint.length(), line.length(),
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                detail.setText(line);
+            } else {
+                detail.setText(posting.describe());
+            }
+
+            if (active && nifcTotal > 0) {
+                bar.setVisibility(View.VISIBLE);
+                bar.setProgress((int) (nifcDone * 100L / nifcTotal));
+            } else {
+                bar.setVisibility(View.GONE);
+            }
+
+            action.setVisibility(View.VISIBLE);
+            // While one map is downloading the others are not offered: these run
+            // to tens of megabytes and two at once on a hotspot serves nobody.
+            // Removing one already downloaded stays available.
+            action.setEnabled(activePostingId == null || done);
+            action.setText(pluginContext.getString(
+                    done ? R.string.remove : R.string.download));
+            action.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (done)
+                        confirmAndRemovePosting(posting);
+                    else
+                        confirmAndInstallPosting(posting);
+                }
+            });
+
+            // Turning the overlay on and off without leaving the panel.
+            // Offered only when ATAK will actually answer: before it has
+            // registered a freshly downloaded map there is no handler to ask,
+            // and a control that silently does nothing is worse than no control.
+            if (done) {
+                final Boolean visible = PackageInstaller.isVisible(posting);
+                if (visible != null) {
+                    eye.setVisibility(View.VISIBLE);
+                    // Labelled with what pressing it does, not with the state
+                    // it is in: Hide while the map is up, Show while it is not.
+                    eye.setText(pluginContext.getString(
+                            visible.booleanValue() ? R.string.hide_map
+                                    : R.string.show_map));
+                    eye.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            final boolean want = !visible.booleanValue();
+                            if (PackageInstaller.setVisible(posting, want)) {
+                                nifcAdapter.notifyDataSetChanged();
+                            } else {
+                                nifcStatus.setText("ATAK would not change "
+                                        + posting.name());
+                            }
+                        }
+                    });
+                }
+            }
+
+            // An installed map is a place to go, the same as a forest map is.
+            row.setOnClickListener(done ? new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    goToPosting(posting);
+                }
+            } : null);
+            return row;
+        }
+    }
+
+    /**
+     * A map's name, with somewhere for the line to break.
+     *
+     * These names are one long token with no spaces, and Android's line breaker
+     * did not treat their hyphens as break opportunities -- it ran out of width
+     * and split mid-word, GRASSHOPPER-OVERLAY-A / USTIN-IR. Neither
+     * breakStrategy nor hyphenationFrequency changed that. A zero-width space
+     * after each hyphen is an explicit break opportunity, so it breaks where the
+     * name already has a seam and nowhere else. The character is invisible and
+     * is not part of the filename -- this is display only.
+     */
+    private static CharSequence breakable(String name) {
+        return name == null ? "" : name.replace("-", "-\u200B");
+    }
+
+    private static String join(String path, String segment) {
+        if (path == null || path.isEmpty())
+            return segment + "/";
+        return path.endsWith("/") ? path + segment + "/"
+                : path + "/" + segment + "/";
+    }
+
     private final class PackageAdapter extends ArrayAdapter<Depot.Package> {
 
         PackageAdapter(Context ctx) {
@@ -1342,17 +2524,47 @@ public class MapDepot implements IPlugin {
             final TextView name = row.findViewById(R.id.region_name);
             final TextView detail = row.findViewById(R.id.region_detail);
             final Button action = row.findViewById(R.id.region_action);
+            final Button eye = row.findViewById(R.id.region_visible);
             final ProgressBar bar = row.findViewById(R.id.region_progress);
 
             final boolean active = pkg.id().equals(activeForestId);
             final boolean done = installedPackages.contains(pkg.id());
+
+            // Same Show/Hide the incident maps have. A district map is a PDF
+            // overlay like any other and there is no reason toggling it should
+            // mean a trip out to the overlay manager. Offered only where ATAK
+            // will answer, so a vector tile package -- which has no such handler
+            // -- simply does not show one.
+            eye.setVisibility(View.GONE);
+            if (done && !active) {
+                final Boolean visible = PackageInstaller.isVisible(pkg);
+                if (visible != null) {
+                    eye.setVisibility(View.VISIBLE);
+                    eye.setText(pluginContext.getString(
+                            visible.booleanValue() ? R.string.hide_map
+                                    : R.string.show_map));
+                    eye.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            if (PackageInstaller.setVisible(pkg,
+                                    !visible.booleanValue()))
+                                packageAdapter.notifyDataSetChanged();
+                            else
+                                forestStatus.setText("ATAK would not change "
+                                        + pkg.name());
+                        }
+                    });
+                }
+            }
 
             name.setText(pkg.name());
             if (done) {
                 // Only the hint is coloured; the size stays the same weight as
                 // every other row so the list does not turn into a christmas
                 // tree once a few things are installed.
-                final String hint = " · tap to go there";
+                // Its own line, as on the incident rows: appended to a forest,
+                // a state and a size it wrapped wherever the width ran out.
+                final String hint = "\ntap to go there";
                 final SpannableString line =
                         new SpannableString(pkg.describe() + hint);
                 line.setSpan(
@@ -1390,7 +2602,7 @@ public class MapDepot implements IPlugin {
                         ? (int) (forestDone * 100L / forestTotal) : 0;
                 action.setText(pct + "%");
             } else {
-                action.setText(done ? R.string.remove : R.string.get);
+                action.setText(done ? R.string.remove : R.string.download);
             }
             if (unusable)
                 detail.setText(pkg.describe() + " · needs ATAK 5.7 or newer");
@@ -1445,7 +2657,7 @@ public class MapDepot implements IPlugin {
             // is cheap to undo -- the row goes straight back to Get.
             final boolean done = installedMaps.contains(map.id);
             action.setEnabled(true);
-            action.setText(done ? R.string.remove : R.string.get);
+            action.setText(done ? R.string.remove : R.string.download);
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -1506,7 +2718,7 @@ public class MapDepot implements IPlugin {
                 final boolean started = !done && region.held() > 0;
                 action.setEnabled(activeRegionId == null);
                 action.setText(done ? R.string.remove
-                        : started ? R.string.finish : R.string.get);
+                        : started ? R.string.finish : R.string.download);
             }
 
             final boolean held = region.fullyHeld()

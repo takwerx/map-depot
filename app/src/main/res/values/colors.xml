@@ -8,4 +8,9 @@
          reads as the same kind of affordance rather than a new one. -->
     <color name="action_green">#4caf50</color>
 
+    <!-- Pinned rows. Deliberately not the green above: that already means "this
+         is on the map, tap to go there", and a pin means "you put this here".
+         Two meanings, two colours. -->
+    <color name="pin_cyan">#4dd0e1</color>
+
 </resources>

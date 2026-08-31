@@ -15,10 +15,15 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
+        <!-- breakStrategy simple so a long name breaks at its hyphens rather
+             than mid-word: FIELDER-MTN-OVERLA / Y-UAS-IR was what the balanced
+             strategy produced once two buttons had taken the width. -->
         <TextView
             android:id="@+id/region_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:breakStrategy="simple"
+            android:hyphenationFrequency="none"
             android:textSize="16sp" />
 
         <TextView
@@ -38,14 +43,32 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- Shown only for an installed incident map, where turning the overlay on
+         and off is otherwise a trip out to ATAK's overlay manager and back. Not
+         an icon: the plugin has no eye asset of its own and cannot reach ATAK's,
+         and a word says which state it is in rather than which state it will
+         go to, which an eye alone never settles. -->
     <Button
+        style="@style/TakwerxButton"
+        android:id="@+id/region_visible"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:focusable="false"
+        android:focusableInTouchMode="false"
+        android:layout_gravity="center_vertical"
+        android:layout_marginEnd="4dp"
+        android:minWidth="60dp"
+        android:visibility="gone" />
+
+    <Button
+        style="@style/TakwerxButton"
         android:id="@+id/region_action"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:focusable="false"
         android:focusableInTouchMode="false"
         android:layout_gravity="center_vertical"
-        android:minWidth="96dp"
-        android:text="@string/get" />
+        android:minWidth="84dp"
+        android:text="@string/download" />
 
 </LinearLayout>

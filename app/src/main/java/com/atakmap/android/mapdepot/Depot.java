@@ -580,12 +580,25 @@ public final class Depot {
         public String describe() {
             final StringBuilder sb = new StringBuilder();
             if (!unit.isEmpty())
-                sb.append(unit);
+                sb.append(spaceCommas(unit));
             if (!state.isEmpty())
                 sb.append(sb.length() > 0 ? " · " : "").append(state);
             sb.append(sb.length() > 0 ? " · " : "")
                     .append(bytes > 0 ? Depot.bytes(bytes) : "size unknown");
             return sb.toString();
+        }
+
+        /**
+         * A district can span several forests, and the catalog lists them with
+         * bare commas -- "Chattahoochee National Forest,Nantahala National
+         * Forest". Everything else on the row is separated with a space, so the
+         * run-together names are the one thing that looks like a mistake.
+         *
+         * Fixed here rather than in the catalog: the data is what the Forest
+         * Service publishes, and a display problem belongs in the display.
+         */
+        private static String spaceCommas(String s) {
+            return s.replaceAll(",\\s*", ", ");
         }
     }
 

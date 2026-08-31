@@ -139,6 +139,18 @@ public final class PackageInstaller {
         for (String candidate : new String[] {
                 pkg.fileName(), pkg.legacyFileName() }) {
             final File f = new File(dir, candidate);
+            // Guarded for the same reason fetch() guards its destination, and
+            // it matters more here: this file gets deleted. A name carrying a
+            // separator would otherwise resolve outside the directory, and
+            // because a listing without an exact size skips the length check
+            // below, any existing file there would match and be offered with a
+            // Remove button.
+            try {
+                guardInside(dir, f);
+            } catch (Exception escapes) {
+                Log.w(TAG, "ignoring " + candidate + ": " + escapes);
+                continue;
+            }
             if (f.isFile() && (pkg.bytes() <= 0 || f.length() == pkg.bytes()))
                 return f;
         }
@@ -309,6 +321,21 @@ public final class PackageInstaller {
         }
     }
 
+    /** {@code Content-Range: bytes 0-1023/4096} to 4096, or 0 if it is absent. */
+    private static long totalFromContentRange(HttpURLConnection conn) {
+        final String v = conn.getHeaderField("Content-Range");
+        if (v == null)
+            return 0L;
+        final int slash = v.lastIndexOf('/');
+        if (slash < 0 || slash + 1 >= v.length())
+            return 0L;
+        try {
+            return Long.parseLong(v.substring(slash + 1).trim());
+        } catch (NumberFormatException unknown) {
+            return 0L;
+        }
+    }
+
     private long download(Depot.Package pkg, File part, Callback cb)
             throws Exception {
         final URL u = new URL(pkg.url());
@@ -322,7 +349,12 @@ public final class PackageInstaller {
 
         try {
             final int code = conn.getResponseCode();
-            if (code != HttpURLConnection.HTTP_OK) {
+            // 206 is Partial Content and it is a success: a body arrives and the
+            // length check below still has to pass, so a genuinely short read is
+            // caught there rather than here. Some CDNs answer 206 to a plain GET,
+            // and treating it as a failure refused a download that had worked.
+            if (code != HttpURLConnection.HTTP_OK
+                    && code != HttpURLConnection.HTTP_PARTIAL) {
                 // Everything about the response, because a bare code has not
                 // been enough to explain the 204s seen in the field: the same
                 // URL serves 200 with the right length from a desktop JVM.
@@ -341,8 +373,14 @@ public final class PackageInstaller {
                 throw explain(code);
             }
 
+            // On a 206 the Content-Length describes the range, not the file, so
+            // it would show progress against the wrong total. The package's own
+            // size is preferred anyway; this only matters when it has none.
             final long total = pkg.bytes() > 0
-                    ? pkg.bytes() : conn.getContentLength();
+                    ? pkg.bytes()
+                    : (code == HttpURLConnection.HTTP_PARTIAL
+                            ? totalFromContentRange(conn)
+                            : conn.getContentLength());
 
             long done = 0;
             long lastPost = 0;
@@ -412,6 +450,29 @@ public final class PackageInstaller {
         final File f = held(pkg);
         if (f == null) {
             post(cb, pkg, "unavailable", "it is not installed");
+            return;
+        }
+
+        // A KMZ is not a raster dataset, so the layer-stack search below cannot
+        // find it however long it polls. ATAK has a general answer for this:
+        // ZOOM_TO_FILE_ACTION hands a path to URIContentManager, which finds
+        // whichever handler owns that file and asks it to go there. It works for
+        // anything ATAK has a handler for, and the KMZ is what needs it.
+        //
+        // The rasters keep the search below, which is proven and reports the
+        // "still scanning" case the operator can act on.
+        if (!"grg".equals(pkg.destination())) {
+            try {
+                final android.content.Intent i = new android.content.Intent(
+                        "com.atakmap.android.importexport.ZOOM_TO_FILE_ACTION");
+                i.putExtra("filepath", f.getAbsolutePath());
+                com.atakmap.android.ipc.AtakBroadcast.getInstance()
+                        .sendBroadcast(i);
+                post(cb, pkg, "going", null);
+            } catch (LinkageError | RuntimeException notThisBuild) {
+                Log.w(TAG, "could not go to " + f.getName() + ": " + notThisBuild);
+                post(cb, pkg, "unavailable", "this build cannot go there");
+            }
             return;
         }
 
@@ -636,6 +697,181 @@ public final class PackageInstaller {
     }
 
     /**
+     * ATAK's GRG outlines layer -- the footprints drawn for every GRG on the
+     * device, not for any one map.
+     *
+     * Found by name across the render stacks rather than by reaching for
+     * GRGMapComponent, which a plugin has no handle on. GRGMapComponent calls it
+     * "GRG Outlines" and puts it with the vector overlays.
+     */
+    private static final String OUTLINES_LAYER = "GRG Outlines";
+
+    /**
+     * ATAK's own preference for the same thing, kept in step so the state
+     * survives a restart and matches what the overlay manager shows.
+     */
+    private static final String OUTLINES_PREF = "grgs.outlines-visible";
+
+    private static com.atakmap.map.layer.Layer outlinesLayer() {
+        final com.atakmap.android.maps.MapView mv =
+                com.atakmap.android.maps.MapView.getMapView();
+        if (mv == null)
+            return null;
+        try {
+            for (com.atakmap.android.maps.MapView.RenderStack stack
+                    : com.atakmap.android.maps.MapView.RenderStack.values()) {
+                final com.atakmap.map.layer.Layer hit =
+                        findLayer(mv.getLayers(stack), 0);
+                if (hit != null)
+                    return hit;
+            }
+            Log.w(TAG, "no layer named \"" + OUTLINES_LAYER + "\" is registered");
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "no outlines layer on this build: " + notThisBuild);
+        }
+        return null;
+    }
+
+    /**
+     * The outlines layer is not at the top of a stack. GRGMapComponent builds a
+     * MultiLayer named "GRG", puts both the rasters and the outlines inside it,
+     * and registers only the MultiLayer with RASTER_OVERLAYS -- so a flat scan
+     * of the stacks finds the parent and never the child, and the control it
+     * feeds simply never appears.
+     */
+    private static com.atakmap.map.layer.Layer findLayer(
+            java.util.List<com.atakmap.map.layer.Layer> layers, int depth) {
+        if (layers == null || depth > 4)
+            return null;
+        for (final com.atakmap.map.layer.Layer l : layers) {
+            if (l == null)
+                continue;
+            if (OUTLINES_LAYER.equals(l.getName()))
+                return l;
+            if (l instanceof com.atakmap.map.layer.MultiLayer) {
+                final com.atakmap.map.layer.Layer hit = findLayer(
+                        ((com.atakmap.map.layer.MultiLayer) l).getLayers(),
+                        depth + 1);
+                if (hit != null)
+                    return hit;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether GRG outlines are drawn, or null when this build has no such layer.
+     *
+     * Read from the preference rather than from the layer, because the layer is
+     * always visible: the overlay manager hides the outlines by turning off the
+     * feature sets *inside* it, not by turning the layer off. Asking the layer
+     * therefore always answered "on", which is why the control did nothing and
+     * never changed its label.
+     */
+    public static Boolean outlinesVisible() {
+        if (outlinesLayer() == null)
+            return null;
+        final com.atakmap.android.maps.MapView mv =
+                com.atakmap.android.maps.MapView.getMapView();
+        if (mv == null)
+            return null;
+        return Boolean.valueOf(android.preference.PreferenceManager
+                .getDefaultSharedPreferences(mv.getContext())
+                .getBoolean(OUTLINES_PREF, true));
+    }
+
+    /**
+     * Turns the footprints on or off, the way the overlay manager does it:
+     * {@code setFeatureSetsVisible} across every feature set in the coverage
+     * store, then ATAK's own preference so the state survives a restart and the
+     * overlay manager's own toggle agrees with ours.
+     */
+    public static boolean setOutlinesVisible(boolean visible) {
+        final com.atakmap.map.layer.Layer l = outlinesLayer();
+        if (!(l instanceof com.atakmap.map.layer.feature.FeatureLayer3))
+            return false;
+        try {
+            final com.atakmap.map.layer.feature.FeatureDataStore2 store =
+                    ((com.atakmap.map.layer.feature.FeatureLayer3) l)
+                            .getDataStore();
+            if (store == null)
+                return false;
+
+            // No filter set on the parameters, so this is every feature set the
+            // store holds -- one per GRG -- which is what the overlay manager's
+            // own toggle does.
+            store.setFeatureSetsVisible(
+                    new com.atakmap.map.layer.feature.FeatureDataStore2
+                            .FeatureSetQueryParameters(),
+                    visible);
+
+            final com.atakmap.android.maps.MapView mv =
+                    com.atakmap.android.maps.MapView.getMapView();
+            if (mv != null)
+                android.preference.PreferenceManager
+                        .getDefaultSharedPreferences(mv.getContext())
+                        .edit().putBoolean(OUTLINES_PREF, visible).apply();
+            return true;
+        } catch (Exception notThisBuild) {
+            Log.w(TAG, "could not set outlines: " + notThisBuild);
+            return false;
+        }
+    }
+
+    /**
+     * Whether ATAK is currently drawing this map, or {@code null} when it cannot
+     * say -- the file is not installed, ATAK has not registered it yet, or this
+     * build has no handler for that kind of file.
+     *
+     * Asked through {@code URIContentManager}, the same route
+     * ZOOM_TO_FILE_ACTION takes, so it works for a GeoPDF and a KMZ alike
+     * without either being special-cased here.
+     */
+    public static Boolean isVisible(Depot.Package pkg) {
+        final com.atakmap.android.hierarchy.action.Visibility v = visibility(pkg);
+        return v == null ? null : Boolean.valueOf(v.isVisible());
+    }
+
+    /**
+     * Turns the overlay on or off. Returns false when ATAK would not say -- the
+     * caller should leave the control as it found it rather than showing a state
+     * that is not real.
+     */
+    public static boolean setVisible(Depot.Package pkg, boolean visible) {
+        final com.atakmap.android.hierarchy.action.Visibility v = visibility(pkg);
+        if (v == null)
+            return false;
+        try {
+            return v.setVisible(visible);
+        } catch (RuntimeException notThisBuild) {
+            Log.w(TAG, "could not set visibility on " + pkg.fileName() + ": "
+                    + notThisBuild);
+            return false;
+        }
+    }
+
+    private static com.atakmap.android.hierarchy.action.Visibility visibility(
+            Depot.Package pkg) {
+        final File f = held(pkg);
+        if (f == null)
+            return null;
+        try {
+            final com.atakmap.android.data.URIContentHandler h =
+                    com.atakmap.android.data.URIContentManager.getInstance()
+                            .getHandler(f);
+            if (h == null
+                    || !h.isActionSupported(
+                            com.atakmap.android.hierarchy.action.Visibility.class))
+                return null;
+            return (com.atakmap.android.hierarchy.action.Visibility) h;
+        } catch (LinkageError | RuntimeException notThisBuild) {
+            Log.w(TAG, "no visibility handler for " + f.getName() + ": "
+                    + notThisBuild);
+            return null;
+        }
+    }
+
+    /**
      * Removes a package, telling ATAK before taking the file away.
      *
      * The order matters and is the opposite of ATAK's own. Deleting a GRG from
@@ -649,15 +885,39 @@ public final class PackageInstaller {
      * file. If ATAK has already removed it, that is fine -- the check is whether
      * it is gone, not who did it.
      */
+    /**
+     * What ATAK calls this kind of file, which its importers are registered
+     * against. A DELETE_DATA naming a pair no importer claims is answered with
+     * "no Importer found" and the layer is never unloaded -- the file goes and
+     * the overlay stays on the map until the next restart.
+     */
+    private static String contentTypeOf(Depot.Package pkg) {
+        return "grg".equals(pkg.destination()) ? "External GRG Data" : "KML";
+    }
+
+    /**
+     * KML and KMZ are separate mime types and ATAK registers both; guessing
+     * {@code application/octet-stream} matched neither.
+     */
+    private static String mimeTypeOf(Depot.Package pkg) {
+        final String name = pkg.fileName().toLowerCase(java.util.Locale.US);
+        if (name.endsWith(".kmz"))
+            return "application/vnd.google-earth.kmz";
+        if (name.endsWith(".kml"))
+            return "application/vnd.google-earth.kml+xml";
+        return "application/octet-stream";
+    }
+
     private static boolean retire(Depot.Package pkg, File f) {
         final String path = f.getAbsolutePath();
-        if ("grg".equals(pkg.destination())) {
+        if ("grg".equals(pkg.destination())
+                || "overlays".equals(pkg.destination())) {
             try {
                 final android.content.Intent i = new android.content.Intent(
                         "com.atakmap.android.importexport.DELETE_DATA");
                 i.putExtra("uri", path);
-                i.putExtra("contentType", "External GRG Data");
-                i.putExtra("mimeType", "application/octet-stream");
+                i.putExtra("contentType", contentTypeOf(pkg));
+                i.putExtra("mimeType", mimeTypeOf(pkg));
                 com.atakmap.android.ipc.AtakBroadcast.getInstance().sendBroadcast(i);
 
                 // Give the unload a moment to land before the file disappears.
@@ -673,7 +933,11 @@ public final class PackageInstaller {
         }
 
         final boolean gone = !f.exists() || f.delete();
-        if (gone && !"grg".equals(pkg.destination()))
+        // Imagery is found by a scanner, so it has to be told to look again now
+        // the file is gone. An overlay was handed to the import pipeline, and
+        // handing that pipeline a file that no longer exists only logs "No file
+        // to import" -- so it is asked to unload, not to import.
+        if (gone && "imagery".equals(pkg.destination()))
             announce(pkg, new File(dirFor(pkg), pkg.fileName()));
         return gone;
     }
@@ -692,7 +956,10 @@ public final class PackageInstaller {
      * by name and does not need to be asked again.
      */
     private static void announce(Depot.Package pkg, File dest) {
-        if (!"grg".equals(pkg.destination())) {
+        // Imagery is found by the scanner. A GRG is not, and neither is an
+        // overlay -- both need the import pipeline to be registered live.
+        final String where = pkg.destination();
+        if (!"grg".equals(where) && !"overlays".equals(where)) {
             BaseMapInstaller.requestLayerScan(dest);
             return;
         }

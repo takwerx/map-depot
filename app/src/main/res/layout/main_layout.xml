@@ -23,35 +23,57 @@
         android:orientation="vertical">
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/btn_dted"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="72dp"
+            android:layout_marginBottom="3dp"
+            android:minHeight="46dp"
             android:text="@string/elevation_heading" />
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/btn_maps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="72dp"
+            android:layout_marginBottom="3dp"
+            android:minHeight="46dp"
             android:text="@string/maps_heading" />
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/btn_forests"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:minHeight="72dp"
+            android:layout_marginBottom="3dp"
+            android:minHeight="46dp"
             android:text="@string/forests_heading" />
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/btn_recmaps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="72dp"
+            android:layout_marginBottom="3dp"
+            android:minHeight="46dp"
             android:text="@string/recmaps_heading" />
+
+        <Button
+            style="@style/TakwerxButton"
+            android:id="@+id/btn_nifc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="3dp"
+            android:minHeight="46dp"
+            android:text="@string/nifc_heading" />
+
+        <Button
+            style="@style/TakwerxButton"
+            android:id="@+id/btn_uaswfc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="46dp"
+            android:text="@string/uaswfc_heading" />
 
         <TextView
             android:id="@+id/home_note"
@@ -79,6 +101,7 @@
             android:orientation="horizontal">
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/btn_back_forests"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -88,6 +111,7 @@
                  takes the whole screen with its own text box the moment you tap
                  here, because ATAK runs landscape. Typing happens on the line. -->
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/package_filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -113,6 +137,7 @@
              scrolls or reflows, changes label mid-download, and is the size of a
              thumbnail; this is always in the same place and full width. -->
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/cancel_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -121,16 +146,36 @@
             android:text="@string/cancel_download"
             android:visibility="gone" />
 
-        <TextView
-            android:id="@+id/forest_status"
+        <!-- Same pinned outlines control the incident list has. District maps
+             are GeoPDFs and draw the same footprints. -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minLines="2"
-            android:maxLines="2"
-            android:ellipsize="end"
-            android:paddingBottom="4dp"
-            android:paddingTop="4dp"
-            android:textSize="13sp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/forest_outlines"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+
+            <TextView
+                android:id="@+id/forest_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:minLines="2"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:paddingBottom="4dp"
+                android:paddingTop="4dp"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <ListView
             android:id="@+id/forest_list"
@@ -154,12 +199,14 @@
             android:orientation="horizontal">
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/btn_back_maps"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/back" />
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/basemap_filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -169,6 +216,7 @@
                 android:paddingEnd="10dp" />
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/category_button"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -211,6 +259,7 @@
             android:orientation="horizontal">
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/btn_back"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -222,6 +271,7 @@
                  A button plus a chooser dialog on ATAK's own context behaves
                  the same for the operator and cannot do that. -->
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/region_filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -231,6 +281,7 @@
                 android:paddingEnd="10dp" />
 
             <Button
+                style="@style/TakwerxButton"
                 android:id="@+id/country_button"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -239,6 +290,7 @@
         </LinearLayout>
 
         <Button
+            style="@style/TakwerxButton"
             android:id="@+id/cancel_bar_dted"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -266,6 +318,101 @@
             android:layout_weight="1"
             android:divider="#33FFFFFF"
             android:dividerHeight="1dp" />
+    </LinearLayout>
+
+
+    <!-- NIFC incident maps.
+         One list, not a fixed set of screens, because the eleven GACCs do not
+         agree on a layout: most are <gacc>/2026/2026_Fire/, Oregon nests its
+         fires under 2026_Incidents_Oregon/, southern mixes state folders in,
+         and california_statewide has no year folder at all. A wizard modelled
+         on any one of them is wrong for the others, so this walks the tree it
+         actually finds and shows a breadcrumb of where it is. -->
+    <LinearLayout
+        android:id="@+id/nifc_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/btn_back_nifc"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/back" />
+
+            <!-- States what it will cost before it is used: "Installed (3)",
+                 not "Installed". Otherwise the only way to learn what the
+                 control does is to press it and watch the list move. -->
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/nifc_filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="@string/filter_all" />
+
+            <!-- The GACC is remembered, so this reads as the operator's own
+                 region rather than as a filter they have to set every time. -->
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/nifc_gacc"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1" />
+        </LinearLayout>
+
+        <!-- Pinned above the list rather than in it, so it stays put while the
+             list scrolls. Outlines are a property of every GRG at once, not of
+             a row, which is why it does not live on one. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/nifc_outlines"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+
+            <TextView
+                android:id="@+id/nifc_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <Button
+            style="@style/TakwerxButton"
+            android:id="@+id/cancel_bar_nifc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:minHeight="56dp"
+            android:text="@string/cancel_download"
+            android:visibility="gone" />
+
+        <ListView
+            android:id="@+id/nifc_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="4dp"
+            android:layout_weight="1" />
     </LinearLayout>
 
 </LinearLayout>
