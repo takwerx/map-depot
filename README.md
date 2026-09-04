@@ -69,7 +69,8 @@ _________________________________________________________________
 STATUS
 
 Version 1.6. Verified on ATAK-CIV 5.8.0.3 (SDK build) and, as the tak.gov-signed
-build, on official ATAK-CIV 5.6.0.18.
+builds, on official ATAK-CIV 5.6.0.18 and 5.8.0.4 -- on the latter the gate,
+the Move offer, and ATAK starting again afterwards.
 
 1.6 adds the rest of the Forest Service's map sheets, and the Beacon Box maps. The Digital Maps site
 publishes eight series behind one download gateway, and 1.0 took two of them,
