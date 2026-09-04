@@ -35,9 +35,9 @@ itself where ATAK expects to find it.
     elevation readouts need.
   - *Streaming Base Maps* -- imagery and street maps served over the network,
     including transparent overlays.
-  - *Offline Public Lands* -- Forest Service vector basemaps, one per national
+  - *Offline Public Lands Tiles* -- Forest Service vector basemaps, one per national
     forest or grassland, held on the device.
-  - *Offline Forest Service Maps* -- the printed map sheets, as GeoPDFs:
+  - *Offline Public Lands PDFs* -- the printed map sheets, as GeoPDFs:
     ranger district, forest, regional, 100K and FSTopo.
   - *Incident Maps (NIFC)* -- the operational maps posted for a going fire:
     ops, division, air operations, IR.
@@ -142,7 +142,7 @@ caches what it has drawn.
 ]
 
 #tak-slide[
-= Offline public lands
+= Offline public lands tiles
 
 A Forest Service vector basemap for each national forest and grassland --
 roads, trails, boundaries, contours and labels -- held on the device and drawn
@@ -174,7 +174,7 @@ over a gigabyte for the biggest forests.
 ]
 
 #tak-slide[
-= Offline Forest Service maps
+= Offline Public Lands PDFs
 
 The Forest Service's printed map sheets, as GeoPDFs. Where a forest basemap is
 the whole forest at map scale, a sheet is what an office hands out, with its
