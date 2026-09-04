@@ -83,7 +83,7 @@ scrolls. The FSTopo list is fetched the first time it is chosen and kept beside
 the catalog, so it is bigger than the whole catalog only once.
 
 1.5 responds to a fault in ATAK, not in the plugin: official ATAK-CIV 5.8.0.4
-does not start once a vector tile package -- an Offline Public Lands map -- is
+does not start once a vector tile package -- an Offline Public Land Vector Tiles package -- is
 in its layer catalog. The first import survives; every start after it dies in
 ATAK's own imagery scan, before any plugin loads, with an AbstractMethodError on
 TileMatrix.getName(). Measured 2026-09-03 on a Galaxy S22 Ultra, Android 14,
