@@ -399,7 +399,7 @@ public class MapDepot implements IPlugin {
                         + ". The rest are still in atak/imagery, and ATAK will not"
                         + " start with them after the next restart. Move them out"
                         + " with a file manager, or delete them.")
-                .setPositiveButton(R.string.ok, null)
+                .setPositiveButton(pluginContext.getString(R.string.ok), null)
                 .show();
     }
 
