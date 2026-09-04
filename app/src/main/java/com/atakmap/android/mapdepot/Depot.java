@@ -372,12 +372,13 @@ public final class Depot {
      * cost storage to hand out a staler copy than the operator can get direct.
      * So the catalog carries the ArcGIS Online item id and nothing else.
      */
-    public static final class Forest implements Package {
+    public static final class Forest implements Package, Located {
         public final String id;
         public final String name;
         public final String kind;
         public final long bytes;
         public final String agolId;
+        private final double lat, lon;
 
         Forest(JSONObject o) {
             id = o.optString("id");
@@ -395,6 +396,24 @@ public final class Depot {
             name = o.optString("name", id);
             kind = o.optString("kind", "forest");
             bytes = o.optLong("bytes");
+            final double[] ll = latLon(o);
+            lat = ll[0];
+            lon = ll[1];
+        }
+
+        @Override
+        public boolean located() {
+            return !Double.isNaN(lat);
+        }
+
+        @Override
+        public double lat() {
+            return lat;
+        }
+
+        @Override
+        public double lon() {
+            return lon;
         }
 
         /** Where the package comes from. Built here so no caller can shape it. */
@@ -448,6 +467,27 @@ public final class Depot {
      * installer cares about, so they share one, and the download machinery is
      * written once.
      */
+    /**
+     * A package that knows where it is, so a list can be sorted by distance
+     * from the map. NaN means the catalog did not say, and such a row sorts
+     * last rather than being dropped.
+     */
+    public interface Located {
+        boolean located();
+
+        double lat();
+
+        double lon();
+    }
+
+    /** lat/lon out of a catalog entry, or NaN for absent or out of range. */
+    static double[] latLon(JSONObject o) {
+        final double la = o.optDouble("lat", Double.NaN);
+        final double lo = o.optDouble("lon", Double.NaN);
+        final boolean placed = la >= -90 && la <= 90 && lo >= -180 && lo <= 180;
+        return new double[] { placed ? la : Double.NaN, placed ? lo : Double.NaN };
+    }
+
     public interface Package {
         String id();
 
@@ -503,7 +543,7 @@ public final class Depot {
      * these carry real OGC geospatial PDF structure, so one lands in the imagery
      * folder and scans in georeferenced with no conversion.
      */
-    public static final class RecMap implements Package {
+    public static final class RecMap implements Package, Located {
         public final String id;
         public final String name;
         public final String unit;
@@ -539,11 +579,9 @@ public final class Depot {
             bytes = o.optLong("bytes");
             kind = o.optString("kind", "");
             scale = o.optString("scale", "");
-            final double la = o.optDouble("lat", Double.NaN);
-            final double lo = o.optDouble("lon", Double.NaN);
-            final boolean placed = la >= -90 && la <= 90 && lo >= -180 && lo <= 180;
-            lat = placed ? la : Double.NaN;
-            lon = placed ? lo : Double.NaN;
+            final double[] ll = latLon(o);
+            lat = ll[0];
+            lon = ll[1];
 
             // Held to the same shape as mapId, and for the same reason: it is
             // now per-map catalog data going into a query string on a host we
@@ -559,8 +597,19 @@ public final class Depot {
         private final String series;
 
         /** True when the catalog says where this sheet is. */
+        @Override
         public boolean located() {
             return !Double.isNaN(lat);
+        }
+
+        @Override
+        public double lat() {
+            return lat;
+        }
+
+        @Override
+        public double lon() {
+            return lon;
         }
 
         @Override

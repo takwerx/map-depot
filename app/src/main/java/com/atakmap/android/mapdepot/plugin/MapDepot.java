@@ -911,10 +911,12 @@ public class MapDepot implements IPlugin {
     /** The chooser button and the search hint follow the mode and series. */
     private void refreshSeriesControls() {
         final boolean sheets = packageMode == PackageMode.RECMAPS;
-        seriesRow.setVisibility(sheets ? View.VISIBLE : View.GONE);
+        final boolean located = locatedList();
+        seriesRow.setVisibility(sheets || located ? View.VISIBLE : View.GONE);
+        seriesButton.setVisibility(sheets ? View.VISIBLE : View.GONE);
         if (sheets)
             seriesButton.setText(seriesLabel(series, true) + "  \u25be");
-        nearButton.setVisibility(sheets && locatedSeries() ? View.VISIBLE : View.GONE);
+        nearButton.setVisibility(located ? View.VISIBLE : View.GONE);
         nearButton.setText(pluginContext.getString(
                 nearMe ? R.string.near_me : R.string.near_map));
         forestSearch.setHint(!sheets ? R.string.search_forests
@@ -1721,8 +1723,17 @@ public class MapDepot implements IPlugin {
      * series, typing -- not on every map move: that callback is the GL
      * thread and this touches views.
      */
-    private boolean locatedSeries() {
-        return series == Series.K100 || series == Series.FSTOPO;
+    /**
+     * Whether the current list can be sorted by distance: true as soon as any
+     * entry carries a location. Decided by the catalog, not by which list it
+     * is, so a series that gains locations sorts without a plugin release.
+     */
+    private boolean locatedList() {
+        for (Depot.Package p : sourceList()) {
+            if (p instanceof Depot.Located && ((Depot.Located) p).located())
+                return true;
+        }
+        return false;
     }
 
     /** The point "nearest" is measured from; falls back to the map center. */
@@ -1733,17 +1744,17 @@ public class MapDepot implements IPlugin {
 
     private int sortNearest() {
         distances.clear();
-        if (packageMode != PackageMode.RECMAPS || !locatedSeries())
+        if (!locatedList())
             return 0;
         final GeoPoint center = anchor();
         if (center == null)
             return 0;
         for (Depot.Package p : shownPackages) {
-            if (p instanceof Depot.RecMap && ((Depot.RecMap) p).located()) {
-                final Depot.RecMap m = (Depot.RecMap) p;
-                distances.put(m.id(), new double[] {
-                        Distance.meters(center, m.lat, m.lon),
-                        Distance.bearing(center, m.lat, m.lon) });
+            if (p instanceof Depot.Located && ((Depot.Located) p).located()) {
+                final Depot.Located m = (Depot.Located) p;
+                distances.put(p.id(), new double[] {
+                        Distance.meters(center, m.lat(), m.lon()),
+                        Distance.bearing(center, m.lat(), m.lon()) });
             }
         }
         Collections.sort(shownPackages, new Comparator<Depot.Package>() {

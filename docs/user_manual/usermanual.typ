@@ -190,7 +190,7 @@ Back; each entry says how many sheets it holds.
   - *Regional* -- one map per Forest Service region, with district or with
     forest boundaries. Eighteen sheets.
   - *100K* -- the 1:100,000 series, nationwide. About 1,800 sheets.
-  - *FSTopo 24K* -- the 1:24,000 quads. About 18,000 sheets, fetched the first
+  - *USFS Topo 24K* -- the 1:24,000 quads. About 18,000 sheets, fetched the first
     time you choose it and then kept on the device.
 ]
 ]

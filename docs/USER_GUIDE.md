@@ -189,7 +189,7 @@ Back; each entry shows how many sheets it holds:
   district boundaries, or with forest boundaries. Eighteen sheets.
 - **100K** — the 1:100,000 series, nationwide, forest land or not. About 1,800
   sheets of 12 to 46 MB.
-- **FSTopo 24K** — the 1:24,000 quads. About 18,000 sheets of 3 to 4 MB. The
+- **USFS Topo 24K** — the 1:24,000 quads. About 18,000 sheets of 3 to 4 MB. The
   list is fetched the first time you choose it, then kept on the device.
 
 The 100K and FSTopo lists are sorted by distance from the center of the map,
