@@ -22,9 +22,9 @@
     <string name="filter_all">All</string>
     <string name="filter_installed">Installed</string>
     <string name="filter_available">Available</string>
-    <string name="forests_heading">Offline Public Lands Tiles</string>
+    <string name="forests_heading">Offline Public Land Vector Tiles</string>
     <string name="search_forests">Search</string>
-    <string name="recmaps_heading">Offline Public Lands PDFs</string>
+    <string name="recmaps_heading">Offline Public Land PDFs</string>
     <string name="choose_series">Map series</string>
     <string name="series_district">Ranger District &amp; Forest</string>
     <string name="series_regional">Regional</string>
@@ -48,7 +48,7 @@
     <string name="forests_need_57_brief">needs ATAK 5.7 or newer</string>
     <string name="forests_blocked">Not available on ATAK %1$s: ATAK does not start with these maps installed. Waiting on a fix from tak.gov.</string>
     <string name="forests_blocked_brief">not available on ATAK %1$s</string>
-    <string name="home_forests_blocked">Offline Public Lands Tiles is not available on ATAK %1$s: ATAK does not start with these maps installed. Waiting on a fix from tak.gov.</string>
+    <string name="home_forests_blocked">Offline Public Land Vector Tiles is not available on ATAK %1$s: ATAK does not start with these maps installed. Waiting on a fix from tak.gov.</string>
     <string name="nifc_heading">Incident Maps (NIFC)</string>
     <string name="uaswfc_heading">Drone IR Maps (UASWFC)</string>
     <string name="beacon_heading">Beacon Box Maps</string>

@@ -161,17 +161,19 @@
                 android:id="@+id/sheet_series"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
                 android:layout_weight="1"
                 android:minWidth="0dp"
                 android:paddingStart="10dp"
                 android:paddingEnd="10dp" />
 
+            <!-- No start margin: on the tiles list the chooser is gone and
+                 this button must sit on the left edge with Back above it. -->
             <Button
                 style="@style/TakwerxButton"
                 android:id="@+id/near_anchor"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
                 android:minWidth="0dp"
                 android:paddingStart="10dp"
                 android:paddingEnd="10dp"

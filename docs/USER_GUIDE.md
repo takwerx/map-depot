@@ -28,13 +28,13 @@ like a version problem.
 Map Depot needs outbound HTTPS (port 443) and nothing else. No account, no key,
 no configuration, and no TAK server involvement.
 
-**On ATAK 5.6, Offline Public Lands Tiles does not work.** Vector tile package support
+**On ATAK 5.6, Offline Public Land Vector Tiles does not work.** Vector tile package support
 arrived in ATAK 5.7, so on 5.6 a forest basemap would download and then be
 invisible to ATAK. Map Depot marks those maps as needing 5.7 or newer rather
 than letting you spend a gigabyte on one. Elevation, streaming base maps and
 Forest Service map sheets all work normally on 5.6.
 
-**On official ATAK 5.8.0.4, Offline Public Lands Tiles is not available either.** ATAK
+**On official ATAK 5.8.0.4, Offline Public Land Vector Tiles is not available either.** ATAK
 5.8.0.4 does not start with a vector tile package on the phone once it has
 cataloged it — it dies before any plugin loads, with no message. Map Depot dims
 the section and says so, and does not offer the downloads. If you already have
@@ -61,9 +61,9 @@ The landing page offers six kinds of data, each on its own page.
   elevation readouts need.
 - **Streaming Base Maps** — imagery and street maps served over the network,
   including transparent overlays.
-- **Offline Public Lands Tiles** — Forest Service vector basemaps, one per national
+- **Offline Public Land Vector Tiles** — Forest Service vector basemaps, one per national
   forest or grassland, held on the device.
-- **Offline Public Lands PDFs** — the printed map sheets, as GeoPDFs: ranger
+- **Offline Public Land PDFs** — the printed map sheets, as GeoPDFs: ranger
   district, forest, regional, 100K and FSTopo.
 - **Incident Maps (NIFC)** — the operational maps posted for a going fire: ops,
   division, air operations, transport, briefing and IR.
@@ -148,7 +148,7 @@ no street names on it. An overlay puts them back without hiding the imagery.
 
 ---
 
-## 5. Offline public lands tiles
+## 5. Offline public land vector tiles
 
 A Forest Service vector basemap for each national forest and grassland — roads,
 trails, boundaries, contours and labels — held on the device and drawn with no
@@ -175,7 +175,7 @@ at any zoom, and takes far less space than the equivalent tiles would.
 
 ---
 
-## 6. Offline Public Lands PDFs
+## 6. Offline Public Land PDFs
 
 The Forest Service's printed map sheets, as GeoPDFs. Where a forest basemap is
 the whole forest at map scale, a sheet is what an office hands out, with its
@@ -379,7 +379,7 @@ indistinguishable from data put there by hand.
 |---|---|
 | Elevation | `atak/DTED/`, one file per one-degree square |
 | Streaming base maps | `atak/imagery/`, as map source files |
-| Offline public lands | `atak/imagery/`, as vector tile packages |
+| Offline public land vector tiles | `atak/imagery/`, as vector tile packages |
 | Forest Service map sheets | `atak/grg/`, as georeferenced PDFs |
 | Incident and drone maps (PDF) | `atak/grg/`, as georeferenced PDFs |
 | Incident and drone maps (KMZ) | `atak/overlays/`, as ATAK overlays |

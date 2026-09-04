@@ -386,7 +386,7 @@ public class MapDepot implements IPlugin {
         final int n = found.size();
         final String version = AtakBuild.versionNumber(host);
         final String message = n + " vector tile package" + (n == 1 ? " is" : "s are")
-                + " in atak/imagery (Offline Public Lands maps). ATAK " + version
+                + " in atak/imagery (Offline Public Land Vector Tiles). ATAK " + version
                 + " will not start with " + (n == 1 ? "it" : "them")
                 + " there after the next restart.\n\nMove "
                 + (n == 1 ? "it" : "them") + " to atak/" + PackageInstaller.PARKED_DIR_NAME

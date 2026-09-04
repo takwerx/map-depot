@@ -31,10 +31,10 @@ nothing has to be imported by hand afterwards:
     -- satellite, street, topographic, nautical, and transparent overlays such as
     BLM roads and trails, FEMA flood hazard zones and current fire perimeters.
 
-  * Offline public lands tiles. US Forest Service vector basemap packages, one per
+  * Offline public land vector tiles. US Forest Service vector basemap packages, one per
     national forest or grassland, fetched directly from ArcGIS Online.
 
-  * Offline public lands PDFs. The Forest Service's printed map sheets as
+  * Offline public land PDFs. The Forest Service's printed map sheets as
     georeferenced PDFs, which install as image overlays and draw over whatever
     base map is already in use: ranger district and forest visitor maps, the
     nine regional maps, the 1:100,000 series and the 1:24,000 FSTopo quads. The

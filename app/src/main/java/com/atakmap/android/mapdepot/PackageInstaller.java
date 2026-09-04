@@ -740,9 +740,23 @@ public final class PackageInstaller {
                         public boolean accept(com.atakmap.map.layer.Layer l) {
                             if (!(l instanceof com.atakmap.map.layer.raster.RasterLayer2))
                                 return false;
-                            final java.util.Collection<String> opts =
-                                    ((com.atakmap.map.layer.raster.RasterLayer2) l)
-                                            .getSelectionOptions();
+                            // A layer that cannot answer is a layer that does
+                            // not have it. On ATAK 5.8 one raster layer's
+                            // getSelectionOptions dies inside ATAK on a null
+                            // dataset list, and because findLayers keeps
+                            // asking after a hit, that one layer was aborting
+                            // the whole search -- after the GRG layer had
+                            // already said yes.
+                            final java.util.Collection<String> opts;
+                            try {
+                                opts = ((com.atakmap.map.layer.raster.RasterLayer2) l)
+                                        .getSelectionOptions();
+                            } catch (LinkageError | RuntimeException inAtak) {
+                                if (!polling)
+                                    Log.d(TAG, "layer " + l.getName()
+                                            + " cannot list selections: " + inAtak);
+                                return false;
+                            }
                             final boolean hit = opts != null && opts.contains(name);
                             // Once, or when it succeeds. This runs once a second
                             // for as long as the wait lasts, and on a build that
