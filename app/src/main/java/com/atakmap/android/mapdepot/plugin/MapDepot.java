@@ -2657,6 +2657,10 @@ public class MapDepot implements IPlugin {
                     "USFS", "BLM", "NPS", "DPA", "GACC", "NIFC", "UASWFC",
                     "AM", "PM", "DIV", "MP", "US", "USA"));
 
+    private static final java.util.Set<String> SMALL =
+            new HashSet<>(Arrays.asList("of", "and", "the", "at", "in", "on",
+                    "de", "del", "la", "y"));
+
     /**
      * A folder name as a person would write it: {@code pacific_nw} to
      * "Pacific NW", {@code calif_n} to "Calif N", {@code DAILY MAP PRODUCT}
@@ -2675,6 +2679,12 @@ public class MapDepot implements IPlugin {
             final String upper = w.toUpperCase(java.util.Locale.US);
             if (ACRONYM.contains(upper)) {
                 sb.append(upper);
+                continue;
+            }
+            // "City of Malibu", not "City Of Malibu": the little words stay
+            // down unless they start the name.
+            if (sb.length() > 0 && SMALL.contains(w.toLowerCase(java.util.Locale.US))) {
+                sb.append(w.toLowerCase(java.util.Locale.US));
                 continue;
             }
             // Already shouting, or already mixed on purpose -- leave it.

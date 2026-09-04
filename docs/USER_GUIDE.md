@@ -199,7 +199,11 @@ Only the nearest 300 are listed, and the status line says so; move the map or
 type part of a quad or state name to reach the rest. The distance is in the
 units your ATAK is set to.
 
-![Ranger districts for a forest](screenshots/15_ranger_districts.png)
+![The district list with the series row](screenshots/15_ranger_districts.png)
+
+![Choosing a series](screenshots/31_series_chooser.png)
+
+![USFS Topo quads nearest you](screenshots/30_usfs_topo_nearest.png)
 
 Installed, a sheet lands as a georeferenced overlay, in the right place on the
 ground, over whatever base map is showing.
@@ -306,6 +310,10 @@ browsed the same way as the incident maps: pick your area, open a
 neighborhood, tick what you want, Download. Each row says which of the four
 it is and how big. They install as overlays and draw over whatever base map
 is showing, exactly like an incident map.
+
+![Malibu's neighborhoods, east to west](screenshots/33_beacon_neighborhoods.png)
+
+![A neighborhood's maps](screenshots/34_beacon_maps.png)
 
 The maps' own site cannot be reached from a phone, so Map Depot reads them
 from its depot, where they are mirrored with the author's permission. Maps by

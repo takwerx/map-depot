@@ -174,7 +174,7 @@ over a gigabyte for the biggest forests.
 ]
 
 #tak-slide[
-= Offline Public Land PDFs
+= Offline public land PDFs
 
 The Forest Service's printed map sheets, as GeoPDFs. Where a forest basemap is
 the whole forest at map scale, a sheet is what an office hands out, with its
@@ -198,14 +198,28 @@ Back; each entry says how many sheets it holds.
 #tak-slide[
 = Nearest first
 
-The 100K and FSTopo lists are sorted by distance from the center of the map,
-nearest first, and every row says how far and in which direction, in the units
-your ATAK is set to. Pan the map to where you are working, open the list, and
-the sheet you want is at the top.
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("46.png", width: 72%)
+][
+  Every offline list is sorted by distance, nearest first, and every row says
+  how far and in which direction, in the units your ATAK is set to. The
+  *Near* button says what that is measured from: the center of the map, or
+  you. Pan the map to where you are working, open the list, and the sheet
+  you want is at the top.
 
-#v(6pt)
-Only the nearest 300 are listed, and the status line says so. Move the map, or
-type part of a quad or state name, to reach the rest.
+  #v(6pt)
+  The big series list the nearest 300 and the status line says so. Move the
+  map, or type part of a name, to reach the rest.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("47.png", width: 72%)
+][
+  The series button says how many sheets each series holds. Ranger District
+  & Forest is where the list opens; the others are one tap away.
+]
 ]
 
 #tak-slide[
@@ -443,6 +457,30 @@ covers before deciding to turn it on.
   *Remove* asks first, and deletes through ATAK rather than behind its back --
   the layer is unloaded before the file goes, so nothing is left pointing at
   something that is no longer there.
+]
+]
+
+#tak-slide[
+= Beacon Box maps
+
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("48.png", width: 72%)
+][
+  FlameMapper's neighborhood pre-plans for the Santa Monica Mountains
+  communities and a few others: a base map, an aerial, and where they exist a
+  fire-science and a structure-vulnerability sheet per neighborhood, as
+  GeoPDFs. Pick your area, open a neighborhood -- Malibu's run east to west,
+  as the author lists them -- tick what you want, Download.
+]
+]
+
+#tak-slide[
+#toolbox.side-by-side(columns: (5fr, 7fr))[
+  #image("49.png", width: 72%)
+][
+  Each row says which of the four it is and how big, with the file's own name
+  under it. Installed, a sheet lands as an overlay over whatever base map is
+  showing, like an incident map.
 ]
 ]
 
