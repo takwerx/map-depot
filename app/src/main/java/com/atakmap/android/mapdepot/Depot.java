@@ -506,6 +506,15 @@ public final class Depot {
         public final String unit;
         public final String state;
         public final long bytes;
+        /** Which series this sheet belongs to, for the chooser: district, forest, regional, 100k, fstopo. */
+        public final String kind;
+        public final String scale;
+        /**
+         * Where the sheet is, for series too large to browse by name -- the
+         * 100K and FSTopo sheets carry their centroid so the list can be
+         * sorted by distance from the map. NaN when the catalog has none.
+         */
+        public final double lat, lon;
         private final String mapId;
 
         RecMap(JSONObject o, String series) {
@@ -525,6 +534,13 @@ public final class Depot {
             unit = o.optString("unit", "");
             state = o.optString("state", "");
             bytes = o.optLong("bytes");
+            kind = o.optString("kind", "");
+            scale = o.optString("scale", "");
+            final double la = o.optDouble("lat", Double.NaN);
+            final double lo = o.optDouble("lon", Double.NaN);
+            final boolean placed = la >= -90 && la <= 90 && lo >= -180 && lo <= 180;
+            lat = placed ? la : Double.NaN;
+            lon = placed ? lo : Double.NaN;
 
             // Held to the same shape as mapId, and for the same reason: it is
             // now per-map catalog data going into a query string on a host we
@@ -538,6 +554,11 @@ public final class Depot {
         }
 
         private final String series;
+
+        /** True when the catalog says where this sheet is. */
+        public boolean located() {
+            return !Double.isNaN(lat);
+        }
 
         @Override
         public String id() {
@@ -628,6 +649,75 @@ public final class Depot {
         } catch (java.io.UnsupportedEncodingException never) {
             throw new IllegalStateException(never);
         }
+    }
+
+    /**
+     * The Forest Service series that arrived after the district maps:
+     * Regional and 100K inline, and FSTopo as a count and a pointer, because
+     * eighteen thousand quads are bigger than the rest of the catalog put
+     * together and are fetched only when someone asks for them.
+     *
+     * Separate keys from {@code recmaps} on purpose: 1.4 and 1.5 in the
+     * field read that section and would list every sheet with no chooser.
+     */
+    public static final class Sheets {
+        public final List<RecMap> regional;
+        public final List<RecMap> k100;
+        public final int fstopoCount;
+        public final long fstopoBytes;
+
+        Sheets(List<RecMap> regional, List<RecMap> k100, int fstopoCount,
+                long fstopoBytes) {
+            this.regional = regional;
+            this.k100 = k100;
+            this.fstopoCount = fstopoCount;
+            this.fstopoBytes = fstopoBytes;
+        }
+
+        public static final Sheets NONE = new Sheets(
+                Collections.<RecMap>emptyList(), Collections.<RecMap>emptyList(), 0, 0L);
+    }
+
+    public static Sheets parseSheets(String json) throws Exception {
+        final JSONObject root = new JSONObject(json);
+        final JSONObject section = root.optJSONObject("sheets");
+        if (section == null)
+            return Sheets.NONE;
+        final JSONObject fstopo = section.optJSONObject("fstopo");
+        return new Sheets(
+                sheetList(section.optJSONObject("regional")),
+                sheetList(section.optJSONObject("100k")),
+                fstopo == null ? 0 : Math.max(0, fstopo.optInt("count")),
+                fstopo == null ? 0L : Math.max(0L, fstopo.optLong("bytes")));
+    }
+
+    /** The FSTopo file: {@code {"schema": 1, "maps": [...]}}, one entry per quad. */
+    public static List<RecMap> parseSheetFile(String json) throws Exception {
+        return sheetList(new JSONObject(json));
+    }
+
+    /**
+     * Every sheet names its own series; there is no section default here,
+     * because the district section's default is what sent 173 forest maps
+     * to the wrong series once. An entry without one is rejected.
+     */
+    private static List<RecMap> sheetList(JSONObject section) {
+        final JSONArray arr = section == null ? null : section.optJSONArray("maps");
+        if (arr == null)
+            return Collections.emptyList();
+        final List<RecMap> out = new ArrayList<>(arr.length());
+        for (int i = 0; i < arr.length(); i++) {
+            final JSONObject o = arr.optJSONObject(i);
+            if (o == null)
+                continue;
+            try {
+                out.add(new RecMap(o, o.optString("series", null)));
+            } catch (IllegalArgumentException bad) {
+                com.atakmap.coremap.log.Log.w("MapDepot",
+                        "rejected sheet: " + bad.getMessage());
+            }
+        }
+        return out;
     }
 
     public static List<RecMap> parseRecMaps(String json) throws Exception {

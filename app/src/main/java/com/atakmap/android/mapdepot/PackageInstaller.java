@@ -207,6 +207,43 @@ public final class PackageInstaller {
     }
 
     /**
+     * Which of these packages are on disk, by id. One directory listing per
+     * destination rather than a stat per package: {@link #held} is right for
+     * one row, and wrong for eighteen thousand quads on the main thread.
+     * Same answer as {@code held} -- present under either name, and the
+     * catalog's length when it states one.
+     */
+    public static java.util.Set<String> installedIds(
+            List<? extends Depot.Package> pkgs) {
+        final java.util.Map<String, java.util.Map<String, Long>> listings =
+                new java.util.HashMap<>();
+        final java.util.Set<String> out = new java.util.HashSet<>();
+        for (Depot.Package pkg : pkgs) {
+            java.util.Map<String, Long> names = listings.get(pkg.destination());
+            if (names == null) {
+                names = new java.util.HashMap<>();
+                final File[] files = dirFor(pkg).listFiles();
+                if (files != null) {
+                    for (File f : files) {
+                        if (f.isFile())
+                            names.put(f.getName(), f.length());
+                    }
+                }
+                listings.put(pkg.destination(), names);
+            }
+            for (String candidate : new String[] {
+                    pkg.fileName(), pkg.legacyFileName() }) {
+                final Long len = names.get(candidate);
+                if (len != null && (pkg.bytes() <= 0 || len == pkg.bytes())) {
+                    out.add(pkg.id());
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
      * The file holding this package, under either its current or its former
      * name, or null. Earlier builds named these after the catalog id, and an
      * operator who already spent 200 MB should not spend it again because the

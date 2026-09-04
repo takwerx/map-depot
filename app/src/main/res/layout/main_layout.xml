@@ -107,6 +107,21 @@
                 android:layout_height="wrap_content"
                 android:text="@string/back" />
 
+            <!-- Which Forest Service series the list shows. A chooser, not a
+                 Spinner: a Spinner's dropdown is a Dialog on the plugin
+                 context and takes ATAK down. Hidden on the public-lands list,
+                 which has one series. -->
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/sheet_series"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:visibility="gone" />
+
             <!-- flagNoExtractUi on the imeOptions below: without it Android
                  takes the whole screen with its own text box the moment you tap
                  here, because ATAK runs landscape. Typing happens on the line. -->

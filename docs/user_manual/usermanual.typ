@@ -3,7 +3,7 @@
 
 #show: userguide.with(
    plugin-name: "Map Depot",
-   plugin-version: "1.5",
+   plugin-version: "1.6",
    platform: "ATAK",
    platform-version: "5.8.0",
 )
@@ -37,7 +37,8 @@ itself where ATAK expects to find it.
     including transparent overlays.
   - *Offline Public Lands* -- Forest Service vector basemaps, one per national
     forest or grassland, held on the device.
-  - *Offline Ranger District Maps* -- the printed district maps, as GeoPDFs.
+  - *Offline Forest Service Maps* -- the printed map sheets, as GeoPDFs:
+    ranger district, forest, regional, 100K and FSTopo.
   - *Incident Maps (NIFC)* -- the operational maps posted for a going fire:
     ops, division, air operations, IR.
   - *Drone IR Maps (UASWFC)* -- infrared products flown over a fire, as
@@ -171,19 +172,38 @@ over a gigabyte for the biggest forests.
 ]
 
 #tak-slide[
-= Offline ranger district maps
+= Offline Forest Service maps
 
-The printed ranger district maps, as GeoPDFs. Where a forest basemap is the
-whole forest at map scale, a district map is the sheet a district office hands
-out, with its margin, legend and printed detail.
+The Forest Service's printed map sheets, as GeoPDFs. Where a forest basemap is
+the whole forest at map scale, a sheet is what an office hands out, with its
+margin, legend and printed detail. Four series, picked with the button beside
+Back; each entry says how many sheets it holds.
 
 #v(6pt)
 #toolbox.side-by-side(columns: (5fr, 7fr))[
   #image("15.png", width: 72%)
 ][
-  Search by forest name to see its districts. Each row names the forest and
-  state it belongs to.
+  - *Ranger District & Forest* -- the district maps and the whole-forest
+    visitor maps. Search by forest name to see its districts.
+  - *Regional* -- one map per Forest Service region, with district or with
+    forest boundaries. Eighteen sheets.
+  - *100K* -- the 1:100,000 series, nationwide. About 1,800 sheets.
+  - *FSTopo 24K* -- the 1:24,000 quads. About 18,000 sheets, fetched the first
+    time you choose it and then kept on the device.
 ]
+]
+
+#tak-slide[
+= Nearest first
+
+The 100K and FSTopo lists are sorted by distance from the center of the map,
+nearest first, and every row says how far and in which direction, in the units
+your ATAK is set to. Pan the map to where you are working, open the list, and
+the sheet you want is at the top.
+
+#v(6pt)
+Only the nearest 300 are listed, and the status line says so. Move the map, or
+type part of a quad or state name, to reach the rest.
 ]
 
 #tak-slide[
@@ -477,7 +497,7 @@ indistinguishable from data put there by hand.
   - Elevation → `atak/DTED/`, one file per one-degree square.
   - Streaming base maps → `atak/imagery/`, as map source files.
   - Offline public lands → `atak/imagery/`, as vector tile packages.
-  - Ranger district maps → `atak/grg/`, as georeferenced PDFs.
+  - Forest Service map sheets → `atak/grg/`, as georeferenced PDFs.
   - Incident and drone maps → `atak/grg/` for a PDF, `atak/overlays/` for a
     KMZ.
 

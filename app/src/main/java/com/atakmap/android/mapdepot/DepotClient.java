@@ -48,6 +48,13 @@ public final class DepotClient {
     /** A catalog far larger than this is not a catalog. */
     private static final int MAX_DOCUMENT = 8 * 1024 * 1024;
 
+    /**
+     * The FSTopo list is eighteen thousand entries and a few megabytes on its
+     * own, so it gets room the catalog does not need; the cap is still there
+     * so a wrong document cannot fill memory.
+     */
+    private static final int MAX_SHEET_DOCUMENT = 32 * 1024 * 1024;
+
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final File cacheDir;
@@ -74,11 +81,25 @@ public final class DepotClient {
     }
 
     public interface ForestCallback {
-        /** Both package kinds come from the one catalog document, so both arrive together. */
-        void onForests(List<Depot.Forest> forests, List<Depot.RecMap> recMaps);
+        /** Every package kind comes from the one catalog document, so they arrive together. */
+        void onForests(List<Depot.Forest> forests, List<Depot.RecMap> recMaps,
+                Depot.Sheets sheets);
 
         void onError(String message);
     }
+
+    public interface SheetFileCallback {
+        void onSheets(List<Depot.RecMap> sheets);
+
+        void onError(String message);
+    }
+
+    /**
+     * The FSTopo quads live in their own document beside the catalog. A fixed
+     * name rather than a path read out of the catalog: this is a URL and a
+     * cache file, and neither needs to be steerable.
+     */
+    public static final String FSTOPO_FILE = "sheets-fstopo.json";
 
     public interface ManifestCallback {
         void onManifest(Depot.Manifest manifest);
@@ -184,13 +205,13 @@ public final class DepotClient {
                     final String body = get(baseUrl() + "/" + CATALOG);
                     write(cache, body);
                     postForests(cb, Depot.parseForests(body),
-                            Depot.parseRecMaps(body));
+                            Depot.parseRecMaps(body), Depot.parseSheets(body));
                 } catch (final Exception e) {
                     Log.w(TAG, "package fetch failed: " + describe(e));
                     try {
                         final String cached = read(cache);
                         postForests(cb, Depot.parseForests(cached),
-                                Depot.parseRecMaps(cached));
+                                Depot.parseRecMaps(cached), Depot.parseSheets(cached));
                     } catch (Exception noCache) {
                         final String msg = describe(e);
                         main.post(new Runnable() {
@@ -206,11 +227,55 @@ public final class DepotClient {
     }
 
     private void postForests(final ForestCallback cb,
-            final List<Depot.Forest> forests, final List<Depot.RecMap> recMaps) {
+            final List<Depot.Forest> forests, final List<Depot.RecMap> recMaps,
+            final Depot.Sheets sheets) {
         main.post(new Runnable() {
             @Override
             public void run() {
-                cb.onForests(forests, recMaps);
+                cb.onForests(forests, recMaps, sheets);
+            }
+        });
+    }
+
+    /**
+     * The FSTopo quads, fetched the first time that series is chosen and kept
+     * on disk beside the catalog, so the second time works without a signal.
+     */
+    public void fetchFstopo(final SheetFileCallback cb) {
+        worker.execute(new Runnable() {
+            @Override
+            public void run() {
+                final File cache = new File(cacheDir, FSTOPO_FILE);
+                try {
+                    final String body = get(baseUrl() + "/" + FSTOPO_FILE,
+                            MAX_SHEET_DOCUMENT);
+                    final List<Depot.RecMap> sheets = Depot.parseSheetFile(body);
+                    write(cache, body);
+                    postSheets(cb, sheets);
+                } catch (final Exception e) {
+                    Log.w(TAG, "fstopo fetch failed: " + describe(e));
+                    try {
+                        postSheets(cb, Depot.parseSheetFile(read(cache)));
+                    } catch (Exception noCache) {
+                        final String msg = describe(e);
+                        main.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                cb.onError(msg);
+                            }
+                        });
+                    }
+                }
+            }
+        });
+    }
+
+    private void postSheets(final SheetFileCallback cb,
+            final List<Depot.RecMap> sheets) {
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                cb.onSheets(sheets);
             }
         });
     }
@@ -281,6 +346,10 @@ public final class DepotClient {
     }
 
     private static String get(String url) throws Exception {
+        return get(url, MAX_DOCUMENT);
+    }
+
+    private static String get(String url, int limit) throws Exception {
         final URL u = new URL(url);
         if (!"https".equalsIgnoreCase(u.getProtocol()))
             throw new IllegalStateException("depot must be https");
@@ -301,7 +370,7 @@ public final class DepotClient {
                 int n;
                 while ((n = in.read(buf)) > 0) {
                     out.write(buf, 0, n);
-                    if (out.size() > MAX_DOCUMENT)
+                    if (out.size() > limit)
                         throw new IllegalStateException("document too large");
                 }
             }

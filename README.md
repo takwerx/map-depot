@@ -34,9 +34,12 @@ nothing has to be imported by hand afterwards:
   * Offline public lands. US Forest Service vector basemap packages, one per
     national forest or grassland, fetched directly from ArcGIS Online.
 
-  * Offline ranger district maps. Forest Service ranger district and forest
-    visitor maps as georeferenced PDFs, which install as image overlays and draw
-    over whatever base map is already in use.
+  * Offline Forest Service maps. The Forest Service's printed map sheets as
+    georeferenced PDFs, which install as image overlays and draw over whatever
+    base map is already in use: ranger district and forest visitor maps, the
+    nine regional maps, the 1:100,000 series and the 1:24,000 FSTopo quads. The
+    two large series are listed nearest the map first, with distance and
+    direction on every row, because nobody knows the name of their quad.
 
   * Incident maps. The operational products a going fire's GIS shop posts to the
     NIFC archive -- ops, division, air operations, transport, briefing and IR --
@@ -58,7 +61,19 @@ archives are read live, since what they hold changes through the day.
 _________________________________________________________________
 STATUS
 
-Version 1.5. Verified on ATAK-CIV 5.8.0.3 (SDK build).
+Version 1.6. Verified on ATAK-CIV 5.8.0.3 (SDK build).
+
+1.6 adds the rest of the Forest Service's map sheets. The Digital Maps site
+publishes eight series behind one download gateway, and 1.0 took two of them,
+the ranger district and forest visitor maps. 1.6 adds the Regional series (18
+sheets), the 1:100,000 series (1,841) and the 1:24,000 FSTopo quads (about
+18,000), each built from the same index and URL template the site's own
+Download button uses, and each sheet confirmed with a byte from the gateway
+before it is cataloged. They share one section with a series chooser, and the
+two large series sort by distance from the map center and show the nearest 300,
+saying so, since a list of eighteen thousand quads is not something anyone
+scrolls. The FSTopo list is fetched the first time it is chosen and kept beside
+the catalog, so it is bigger than the whole catalog only once.
 
 1.5 responds to a fault in ATAK, not in the plugin: official ATAK-CIV 5.8.0.4
 does not start once a vector tile package -- an Offline Public Lands map -- is
@@ -75,7 +90,7 @@ restart from an ATAK that does not open, and on start Map Depot offers once to
 move them to atak/imagery.off, which ATAK does not scan; the dialog says that it
 is the only place this plugin moves a file. The gate is by release, not build
 number, and lifts when tak.gov ships a fixed ATAK. Everything else -- elevation,
-streaming base maps, ranger district maps, incident and drone IR maps -- is
+streaming base maps, Forest Service map sheets, incident and drone IR maps -- is
 unchanged, on every ATAK version.
 
 _________________________________________________________________
@@ -97,7 +112,7 @@ Hosts contacted:
     at a Cloudflare R2 bucket.
   * www.arcgis.com and tiles.arcgis.com, for Forest Service basemap packages,
     which are fetched from their publisher rather than mirrored.
-  * data.fs.usda.gov, for Forest Service ranger district and forest maps.
+  * data.fs.usda.gov, for Forest Service map sheets of every series.
   * ftp.wildfire.gov, for NIFC incident maps. Public, no account.
   * uaswfc.org, for UAS Wildland Fire Consortium drone products. Public, no
     account. Both are preferences rather than fixed addresses, and both are

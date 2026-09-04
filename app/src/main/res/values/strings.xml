@@ -24,7 +24,14 @@
     <string name="filter_available">Available</string>
     <string name="forests_heading">Offline Public Lands</string>
     <string name="search_forests">Search forests…</string>
-    <string name="recmaps_heading">Offline Ranger District Maps</string>
+    <string name="recmaps_heading">Offline Forest Service Maps</string>
+    <string name="choose_series">Map series</string>
+    <string name="series_district">Ranger District &amp; Forest</string>
+    <string name="series_regional">Regional</string>
+    <string name="series_100k">100K</string>
+    <string name="series_fstopo">FSTopo 24K</string>
+    <string name="search_sheets">Search quad or state…</string>
+    <string name="search_regional">Search region…</string>
     <string name="search_recmaps">Search district or forest…</string>
     <string name="partial">Partial</string>
     <string name="choose_category">Category</string>

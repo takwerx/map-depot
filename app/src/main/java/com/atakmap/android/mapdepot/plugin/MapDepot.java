@@ -26,6 +26,7 @@ import com.atakmap.android.mapdepot.AtakBuild;
 import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
+import com.atakmap.android.mapdepot.Distance;
 import com.atakmap.android.mapdepot.InstalledIndex;
 import com.atakmap.android.mapdepot.MapSource;
 import com.atakmap.android.mapdepot.NifcClient;
@@ -34,17 +35,21 @@ import com.atakmap.android.mapdepot.PackageInstaller;
 import com.atakmap.android.mapdepot.Pinned;
 import com.atakmap.android.mapdepot.RegionInstaller;
 import com.atakmap.coremap.log.Log;
+import com.atakmap.coremap.maps.coords.GeoPoint;
 
 import java.io.File;
 
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -154,6 +159,36 @@ public class MapDepot implements IPlugin {
 
     private final List<Depot.Forest> allForests = new ArrayList<>();
     private final List<Depot.RecMap> allRecMaps = new ArrayList<>();
+
+    /**
+     * The Forest Service series that came after the district maps. Regional
+     * and 100K arrive with the catalog; the FSTopo quads are their own
+     * document, fetched the first time that series is chosen, and until then
+     * only their count is known.
+     */
+    private final List<Depot.RecMap> allRegional = new ArrayList<>();
+    private final List<Depot.RecMap> allK100 = new ArrayList<>();
+    private final List<Depot.RecMap> allFstopo = new ArrayList<>();
+    private int fstopoCount;
+    private boolean fstopoLoading;
+
+    private enum Series {
+        DISTRICT, REGIONAL, K100, FSTOPO
+    }
+
+    private Series series = Series.DISTRICT;
+    private Button seriesButton;
+
+    /**
+     * Distance and bearing from the map center, by id, for the rows on
+     * screen. Filled only for the series that carry a location, and only for
+     * the rows shown, so it is never eighteen thousand entries.
+     */
+    private final Map<String, double[]> distances = new HashMap<>();
+
+    /** How many of the nearest sheets a located series shows. */
+    private static final int NEAREST_CAP = 300;
+
     private final List<Depot.Package> shownPackages = new ArrayList<>();
     private final Set<String> installedPackages = new HashSet<>();
 
@@ -399,7 +434,7 @@ public class MapDepot implements IPlugin {
                         + ". The rest are still in atak/imagery, and ATAK will not"
                         + " start with them after the next restart. Move them out"
                         + " with a file manager, or delete them.")
-                .setPositiveButton(R.string.ok, null)
+                .setPositiveButton(pluginContext.getString(R.string.ok), null)
                 .show();
     }
 
@@ -440,6 +475,10 @@ public class MapDepot implements IPlugin {
     @Override
     public void onStop() {
         unregisterPreferences();
+
+        // A fetch in flight when the client is shut down never calls back,
+        // and a flag left true would make the next FSTopo pick do nothing.
+        fstopoLoading = false;
 
         // Close the pane and let go of it. Its buttons hold a reference to this
         // instance, and everything this instance owns is about to be null, so a
@@ -551,6 +590,13 @@ public class MapDepot implements IPlugin {
         forestView = root.findViewById(R.id.forest_view);
         forestStatus = root.findViewById(R.id.forest_status);
         forestSearch = root.findViewById(R.id.forest_search);
+        seriesButton = root.findViewById(R.id.sheet_series);
+        seriesButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                chooseSeries();
+            }
+        });
         cancelBar = root.findViewById(R.id.cancel_bar);
         cancelBar.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -792,8 +838,7 @@ public class MapDepot implements IPlugin {
         baseMapView.setVisibility(View.GONE);
         forestView.setVisibility(View.VISIBLE);
         nifcView.setVisibility(View.GONE);
-        forestSearch.setHint(mode == PackageMode.FORESTS
-                ? R.string.search_forests : R.string.search_recmaps);
+        refreshSeriesControls();
         forestSearch.setText("");
 
         // Say it up front rather than after a gigabyte has been downloaded.
@@ -812,9 +857,115 @@ public class MapDepot implements IPlugin {
             applyForestFilter();
     }
 
-    /** The list behind the current mode, in catalog order. */
+    /** The list behind the current mode and series, in catalog order. */
     private List<? extends Depot.Package> sourceList() {
-        return packageMode == PackageMode.FORESTS ? allForests : allRecMaps;
+        if (packageMode == PackageMode.FORESTS)
+            return allForests;
+        switch (series) {
+            case REGIONAL:
+                return allRegional;
+            case K100:
+                return allK100;
+            case FSTOPO:
+                return allFstopo;
+            default:
+                return allRecMaps;
+        }
+    }
+
+    /** The chooser button and the search hint follow the mode and series. */
+    private void refreshSeriesControls() {
+        final boolean sheets = packageMode == PackageMode.RECMAPS;
+        seriesButton.setVisibility(sheets ? View.VISIBLE : View.GONE);
+        if (sheets)
+            seriesButton.setText(seriesLabel(series, false) + "  \u25be");
+        forestSearch.setHint(!sheets ? R.string.search_forests
+                : series == Series.DISTRICT ? R.string.search_recmaps
+                        : series == Series.REGIONAL ? R.string.search_regional
+                                : R.string.search_sheets);
+    }
+
+    /** With the count, as the UI standard asks: a filter says what it costs. */
+    private String seriesLabel(Series s, boolean withCount) {
+        final int name;
+        final int count;
+        switch (s) {
+            case REGIONAL:
+                name = R.string.series_regional;
+                count = allRegional.size();
+                break;
+            case K100:
+                name = R.string.series_100k;
+                count = allK100.size();
+                break;
+            case FSTOPO:
+                name = R.string.series_fstopo;
+                count = allFstopo.isEmpty() ? fstopoCount : allFstopo.size();
+                break;
+            default:
+                name = R.string.series_district;
+                count = allRecMaps.size();
+        }
+        final String label = pluginContext.getString(name);
+        return withCount ? label + " (" + String.format(Locale.US, "%,d", count) + ")"
+                : label;
+    }
+
+    private void chooseSeries() {
+        final Series[] all = Series.values();
+        final String[] items = new String[all.length];
+        for (int i = 0; i < all.length; i++)
+            items[i] = seriesLabel(all[i], true);
+        new AlertDialog.Builder(hostContext())
+                .setTitle(pluginContext.getString(R.string.choose_series))
+                .setSingleChoiceItems(items, series.ordinal(),
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int which) {
+                                d.dismiss();
+                                selectSeries(all[which]);
+                            }
+                        })
+                .setNegativeButton(pluginContext.getString(R.string.cancel), null)
+                .show();
+    }
+
+    private void selectSeries(Series s) {
+        series = s;
+        refreshSeriesControls();
+        // Clearing the search re-filters through the watcher; the FSTopo
+        // list may still have to be fetched first.
+        forestSearch.setText("");
+        if (s == Series.FSTOPO && allFstopo.isEmpty())
+            loadFstopo();
+        else
+            applyForestFilter();
+    }
+
+    private void loadFstopo() {
+        if (client == null || fstopoLoading)
+            return;
+        fstopoLoading = true;
+        forestStatus.setText("Loading " + String.format(Locale.US, "%,d", fstopoCount)
+                + " quads…");
+        client.fetchFstopo(new DepotClient.SheetFileCallback() {
+            @Override
+            public void onSheets(List<Depot.RecMap> sheets) {
+                fstopoLoading = false;
+                Log.i(TAG, "fstopo quads=" + sheets.size());
+                allFstopo.clear();
+                allFstopo.addAll(sheets);
+                refreshInstalledPackages();
+                refreshSeriesControls();
+                applyForestFilter();
+            }
+
+            @Override
+            public void onError(String message) {
+                fstopoLoading = false;
+                forestStatus.setText("Could not read the FSTopo list: " + message);
+            }
+        });
     }
 
     private void showBaseMaps() {
@@ -1459,13 +1610,21 @@ public class MapDepot implements IPlugin {
         client.fetchForests(new DepotClient.ForestCallback() {
             @Override
             public void onForests(List<Depot.Forest> fetched,
-                    List<Depot.RecMap> recMaps) {
+                    List<Depot.RecMap> recMaps, Depot.Sheets sheets) {
                 Log.i(TAG, "onForests forests=" + fetched.size()
-                        + " recmaps=" + recMaps.size());
+                        + " recmaps=" + recMaps.size()
+                        + " regional=" + sheets.regional.size()
+                        + " 100k=" + sheets.k100.size()
+                        + " fstopo=" + sheets.fstopoCount);
                 allForests.clear();
                 allForests.addAll(fetched);
                 allRecMaps.clear();
                 allRecMaps.addAll(recMaps);
+                allRegional.clear();
+                allRegional.addAll(sheets.regional);
+                allK100.clear();
+                allK100.addAll(sheets.k100);
+                fstopoCount = sheets.fstopoCount;
                 refreshInstalledPackages();
                 applyForestFilter();
             }
@@ -1481,12 +1640,11 @@ public class MapDepot implements IPlugin {
     /** Ask the filesystem once per listing rather than once per row. */
     private void refreshInstalledPackages() {
         installedPackages.clear();
-        for (Depot.Forest f : allForests)
-            if (PackageInstaller.isInstalled(f))
-                installedPackages.add(f.id());
-        for (Depot.RecMap m : allRecMaps)
-            if (PackageInstaller.isInstalled(m))
-                installedPackages.add(m.id());
+        installedPackages.addAll(PackageInstaller.installedIds(allForests));
+        installedPackages.addAll(PackageInstaller.installedIds(allRecMaps));
+        installedPackages.addAll(PackageInstaller.installedIds(allRegional));
+        installedPackages.addAll(PackageInstaller.installedIds(allK100));
+        installedPackages.addAll(PackageInstaller.installedIds(allFstopo));
     }
 
     private void applyForestFilter() {
@@ -1507,10 +1665,70 @@ public class MapDepot implements IPlugin {
                 continue;
             shownPackages.add(p);
         }
+        final int hidden = sortNearest();
         packageAdapter.notifyDataSetChanged();
 
         if (activeForestId == null)
-            forestStatus.setText(statusLine(q));
+            forestStatus.setText(statusLine(q, hidden));
+    }
+
+    /**
+     * For the series that carry a location, order the list by distance from
+     * the map and keep the nearest few hundred. Nobody scrolls eighteen
+     * thousand quads, and a crew does not know its quad's name; it knows
+     * where it is standing. Returns how many rows were cut, so the status
+     * line can say so rather than let a trimmed list read as the whole set.
+     *
+     * Computed when the list is rebuilt -- opening the section, choosing a
+     * series, typing -- not on every map move: that callback is the GL
+     * thread and this touches views.
+     */
+    private int sortNearest() {
+        distances.clear();
+        if (packageMode != PackageMode.RECMAPS
+                || (series != Series.K100 && series != Series.FSTOPO))
+            return 0;
+        final GeoPoint center = Distance.mapCenter();
+        if (center == null)
+            return 0;
+        for (Depot.Package p : shownPackages) {
+            if (p instanceof Depot.RecMap && ((Depot.RecMap) p).located()) {
+                final Depot.RecMap m = (Depot.RecMap) p;
+                distances.put(m.id(), new double[] {
+                        Distance.meters(center, m.lat, m.lon),
+                        Distance.bearing(center, m.lat, m.lon) });
+            }
+        }
+        Collections.sort(shownPackages, new Comparator<Depot.Package>() {
+            @Override
+            public int compare(Depot.Package a, Depot.Package b) {
+                final double[] da = distances.get(a.id());
+                final double[] db = distances.get(b.id());
+                return Double.compare(da == null ? Double.MAX_VALUE : da[0],
+                        db == null ? Double.MAX_VALUE : db[0]);
+            }
+        });
+        if (shownPackages.size() <= NEAREST_CAP)
+            return 0;
+        // The row that is downloading stays on screen whatever the map does.
+        if (activeForestId != null) {
+            for (int i = NEAREST_CAP; i < shownPackages.size(); i++) {
+                if (activeForestId.equals(shownPackages.get(i).id())) {
+                    shownPackages.add(0, shownPackages.remove(i));
+                    break;
+                }
+            }
+        }
+        final int hidden = shownPackages.size() - NEAREST_CAP;
+        shownPackages.subList(NEAREST_CAP, shownPackages.size()).clear();
+        return hidden;
+    }
+
+    /** The row's second line, with how far away the sheet is when that is known. */
+    private String describeRow(Depot.Package pkg) {
+        final double[] d = distances.get(pkg.id());
+        return d == null ? pkg.describe()
+                : pkg.describe() + " · " + Distance.format(d[0], d[1]);
     }
 
     /**
@@ -1518,12 +1736,21 @@ public class MapDepot implements IPlugin {
      * alike: nothing published, nothing matched, or nothing installed. Reporting
      * "0 of 0 installed" for all three reads as a broken search.
      */
-    private String statusLine(String query) {
+    private String statusLine(String query, int hidden) {
         final int total = sourceList().size();
-        if (total == 0)
-            return packageMode == PackageMode.RECMAPS
-                    ? "No ranger district maps in the catalog yet."
-                    : "No packages in the catalog yet.";
+        if (total == 0) {
+            if (packageMode != PackageMode.RECMAPS)
+                return "No packages in the catalog yet.";
+            if (series == Series.FSTOPO && fstopoLoading)
+                return "Loading quads…";
+            return "No " + seriesLabel(series, false) + " maps in the catalog yet.";
+        }
+
+        if (hidden > 0)
+            return String.format(Locale.US,
+                    "Nearest %d of %,d%s · move the map or search",
+                    shownPackages.size(), shownPackages.size() + hidden,
+                    query.isEmpty() ? "" : " matching");
 
         if (shownPackages.isEmpty()) {
             if (packageShown == Shown.INSTALLED)
@@ -2714,7 +2941,7 @@ public class MapDepot implements IPlugin {
                 // a state and a size it wrapped wherever the width ran out.
                 final String hint = "\ntap to go there";
                 final SpannableString line =
-                        new SpannableString(pkg.describe() + hint);
+                        new SpannableString(describeRow(pkg) + hint);
                 line.setSpan(
                         new ForegroundColorSpan(pluginContext.getResources()
                                 .getColor(R.color.action_green)),
@@ -2722,7 +2949,7 @@ public class MapDepot implements IPlugin {
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 detail.setText(line);
             } else {
-                detail.setText(pkg.describe());
+                detail.setText(describeRow(pkg));
             }
 
             if (active && forestTotal > 0) {
@@ -2754,7 +2981,7 @@ public class MapDepot implements IPlugin {
                 action.setText(done ? R.string.remove : R.string.download);
             }
             if (unusable)
-                detail.setText(pkg.describe() + " · " + block);
+                detail.setText(describeRow(pkg) + " · " + block);
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
