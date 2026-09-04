@@ -67,6 +67,8 @@ The landing page offers six kinds of data, each on its own page.
   district, forest, regional, 100K and FSTopo.
 - **Incident Maps (NIFC)** — the operational maps posted for a going fire: ops,
   division, air operations, transport, briefing and IR.
+- **Beacon Box Maps** — FlameMapper's neighborhood pre-plans, four sheets per
+  neighborhood, as GeoPDFs.
 - **Drone IR Maps (UASWFC)** — infrared flown by uncrewed aircraft, as
   georeferenced PDFs and KMZs.
 
@@ -294,6 +296,20 @@ what covers the ground in front of you before deciding what to turn on.
 ![Outlines on](screenshots/26_outlines_on.jpg)
 
 ---
+
+### Beacon Box maps
+
+FlameMapper's neighborhood pre-plans for the Santa Monica Mountains
+communities and a few others: for each neighborhood a base map, an aerial, a
+fire-science sheet and a structure-vulnerability sheet, all GeoPDFs. They are
+browsed the same way as the incident maps: pick your area, open a
+neighborhood, tick what you want, Download. Each row says which of the four
+it is and how big. They install as overlays and draw over whatever base map
+is showing, exactly like an incident map.
+
+The maps' own site cannot be reached from a phone, so Map Depot reads them
+from its depot, where they are mirrored with the author's permission. Maps by
+FlameMapper.
 
 ## 8. Finding what you already have
 

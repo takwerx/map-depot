@@ -41,6 +41,19 @@ public final class Distance {
         }
     }
 
+    /** Where the operator is, or null without a fix. */
+    public static GeoPoint selfPoint() {
+        try {
+            final MapView mv = MapView.getMapView();
+            if (mv == null || mv.getSelfMarker() == null)
+                return null;
+            final GeoPoint p = mv.getSelfMarker().getPoint();
+            return p != null && p.isValid() ? p : null;
+        } catch (RuntimeException notThisBuild) {
+            return null;
+        }
+    }
+
     public static double meters(GeoPoint from, double lat, double lon) {
         return GeoCalculations.distanceTo(from, new GeoPoint(lat, lon));
     }

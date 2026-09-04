@@ -51,6 +51,13 @@ nothing has to be imported by hand afterwards:
     to the UAS Wildland Fire Consortium. Flight logs and geodatabases are left
     out; only georeferenced maps and KMZ overlays are offered.
 
+  * Beacon Box maps. FlameMapper's neighborhood pre-plans for the Santa Monica
+    Mountains communities and a few others -- a base map, an aerial, a
+    fire-science sheet and a structure-vulnerability sheet per neighborhood, as
+    GeoPDFs -- browsed by area and neighborhood the way the incident archives
+    are. Their own site cannot be reached from a phone, so they are mirrored on
+    the depot with the author's permission. Maps by FlameMapper.
+
 Any folder in either archive can be pinned to the top of the list, so a crew
 assigned to a fire reaches it in one tap rather than four.
 
@@ -63,7 +70,7 @@ STATUS
 
 Version 1.6. Verified on ATAK-CIV 5.8.0.3 (SDK build).
 
-1.6 adds the rest of the Forest Service's map sheets. The Digital Maps site
+1.6 adds the rest of the Forest Service's map sheets, and the Beacon Box maps. The Digital Maps site
 publishes eight series behind one download gateway, and 1.0 took two of them,
 the ranger district and forest visitor maps. 1.6 adds the Regional series (18
 sheets), the 1:100,000 series (1,841) and the 1:24,000 FSTopo quads (about

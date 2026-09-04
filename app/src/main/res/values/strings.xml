@@ -32,6 +32,9 @@
     <string name="series_fstopo">FSTopo 24K</string>
     <string name="search_sheets">Search quad or state…</string>
     <string name="search_regional">Search region…</string>
+    <string name="near_map">Near: map center</string>
+    <string name="near_me">Near: me</string>
+    <string name="no_position">No position fix yet; measuring from the map center.</string>
     <string name="search_recmaps">Search district or forest…</string>
     <string name="partial">Partial</string>
     <string name="choose_category">Category</string>
@@ -48,6 +51,7 @@
     <string name="home_forests_blocked">Offline Public Lands is not available on ATAK %1$s: ATAK does not start with these maps installed. Waiting on a fix from tak.gov.</string>
     <string name="nifc_heading">Incident Maps (NIFC)</string>
     <string name="uaswfc_heading">Drone IR Maps (UASWFC)</string>
+    <string name="beacon_heading">Beacon Box Maps</string>
     <string name="download">Download</string>
     <string name="outlines_on">Outlines on</string>
     <string name="outlines_off">Outlines off</string>

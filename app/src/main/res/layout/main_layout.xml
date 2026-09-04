@@ -72,8 +72,17 @@
             android:id="@+id/btn_uaswfc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="3dp"
             android:minHeight="46dp"
             android:text="@string/uaswfc_heading" />
+
+        <Button
+            style="@style/TakwerxButton"
+            android:id="@+id/btn_beacon"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="46dp"
+            android:text="@string/beacon_heading" />
 
         <TextView
             android:id="@+id/home_note"
@@ -107,21 +116,6 @@
                 android:layout_height="wrap_content"
                 android:text="@string/back" />
 
-            <!-- Which Forest Service series the list shows. A chooser, not a
-                 Spinner: a Spinner's dropdown is a Dialog on the plugin
-                 context and takes ATAK down. Hidden on the public-lands list,
-                 which has one series. -->
-            <Button
-                style="@style/TakwerxButton"
-                android:id="@+id/sheet_series"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:minWidth="0dp"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:visibility="gone" />
-
             <!-- flagNoExtractUi on the imeOptions below: without it Android
                  takes the whole screen with its own text box the moment you tap
                  here, because ATAK runs landscape. Typing happens on the line. -->
@@ -146,6 +140,42 @@
                 android:inputType="text"
                 android:maxLines="1"
                 android:singleLine="true" />
+        </LinearLayout>
+
+        <!-- Which Forest Service series the list shows, and what "nearest"
+             is measured from. Its own row: beside the search box it left no
+             room to type. The chooser is a dialog, not a Spinner, whose
+             dropdown is a Dialog on the plugin context and takes ATAK down.
+             Hidden on the public-lands list, which has one series. -->
+        <LinearLayout
+            android:id="@+id/series_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/sheet_series"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+
+            <Button
+                style="@style/TakwerxButton"
+                android:id="@+id/near_anchor"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minWidth="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:visibility="gone" />
         </LinearLayout>
 
         <!-- Cancel lives here, not in the row. A row button moves when the list

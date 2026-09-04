@@ -44,7 +44,10 @@ public final class Depot {
     // perfectly well. The value is URL-encoded before it reaches a query string,
     // so a comma cannot separate a parameter; the pattern is defence in depth,
     // not the escaping.
-    private static final Pattern MAP_ID = Pattern.compile("[A-Za-z0-9 .,'-]{1,120}");
+    // The underscore is for the 100K series, whose gateway names are
+    // "<cell>_<state>"; still nothing that can end a query value or start
+    // another one.
+    private static final Pattern MAP_ID = Pattern.compile("[A-Za-z0-9 .,'_-]{1,120}");
 
     /**
      * A region id becomes part of a filename in the cache directory, so it is

@@ -41,6 +41,8 @@ itself where ATAK expects to find it.
     ranger district, forest, regional, 100K and FSTopo.
   - *Incident Maps (NIFC)* -- the operational maps posted for a going fire:
     ops, division, air operations, IR.
+  - *Beacon Box Maps* -- FlameMapper's neighborhood pre-plans, four sheets per
+    neighborhood, as GeoPDFs.
   - *Drone IR Maps (UASWFC)* -- infrared products flown over a fire, as
     georeferenced PDFs and KMZs.
 ]

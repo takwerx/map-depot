@@ -24,6 +24,7 @@ import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.maps.MapView;
 import com.atakmap.android.mapdepot.AtakBuild;
 import com.atakmap.android.mapdepot.BaseMapInstaller;
+import com.atakmap.android.mapdepot.BeaconClient;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
 import com.atakmap.android.mapdepot.Distance;
@@ -177,7 +178,16 @@ public class MapDepot implements IPlugin {
     }
 
     private Series series = Series.DISTRICT;
-    private Button seriesButton;
+    private Button seriesButton, nearButton;
+    private View seriesRow;
+
+    /**
+     * What "nearest" is measured from. The map center by default -- the
+     * operator pans to where the work is -- and their own position on
+     * request. Said on the button and in the status line, because a list
+     * sorted by an unstated distance reads as random.
+     */
+    private boolean nearMe;
 
     /**
      * Distance and bearing from the map center, by id, for the rows on
@@ -225,6 +235,7 @@ public class MapDepot implements IPlugin {
     // operator at the top of the whole server.
     private NifcClient nifc;
     private UaswfcClient uaswfc;
+    private BeaconClient beacon;
 
     /** Whichever archive the browser is currently showing. */
     private MapSource source;
@@ -590,11 +601,25 @@ public class MapDepot implements IPlugin {
         forestView = root.findViewById(R.id.forest_view);
         forestStatus = root.findViewById(R.id.forest_status);
         forestSearch = root.findViewById(R.id.forest_search);
+        seriesRow = root.findViewById(R.id.series_row);
         seriesButton = root.findViewById(R.id.sheet_series);
         seriesButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 chooseSeries();
+            }
+        });
+        nearButton = root.findViewById(R.id.near_anchor);
+        nearButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!nearMe && Distance.selfPoint() == null) {
+                    toast(pluginContext.getString(R.string.no_position));
+                    return;
+                }
+                nearMe = !nearMe;
+                refreshSeriesControls();
+                applyForestFilter();
             }
         });
         cancelBar = root.findViewById(R.id.cancel_bar);
@@ -730,6 +755,16 @@ public class MapDepot implements IPlugin {
                         if (nifc == null)
                             nifc = new NifcClient();
                         showSource(nifc);
+                    }
+                });
+
+        root.findViewById(R.id.btn_beacon).setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (beacon == null)
+                            beacon = new BeaconClient();
+                        showSource(beacon);
                     }
                 });
 
@@ -876,9 +911,12 @@ public class MapDepot implements IPlugin {
     /** The chooser button and the search hint follow the mode and series. */
     private void refreshSeriesControls() {
         final boolean sheets = packageMode == PackageMode.RECMAPS;
-        seriesButton.setVisibility(sheets ? View.VISIBLE : View.GONE);
+        seriesRow.setVisibility(sheets ? View.VISIBLE : View.GONE);
         if (sheets)
-            seriesButton.setText(seriesLabel(series, false) + "  \u25be");
+            seriesButton.setText(seriesLabel(series, true) + "  \u25be");
+        nearButton.setVisibility(sheets && locatedSeries() ? View.VISIBLE : View.GONE);
+        nearButton.setText(pluginContext.getString(
+                nearMe ? R.string.near_me : R.string.near_map));
         forestSearch.setHint(!sheets ? R.string.search_forests
                 : series == Series.DISTRICT ? R.string.search_recmaps
                         : series == Series.REGIONAL ? R.string.search_regional
@@ -1683,12 +1721,21 @@ public class MapDepot implements IPlugin {
      * series, typing -- not on every map move: that callback is the GL
      * thread and this touches views.
      */
+    private boolean locatedSeries() {
+        return series == Series.K100 || series == Series.FSTOPO;
+    }
+
+    /** The point "nearest" is measured from; falls back to the map center. */
+    private GeoPoint anchor() {
+        final GeoPoint self = nearMe ? Distance.selfPoint() : null;
+        return self != null ? self : Distance.mapCenter();
+    }
+
     private int sortNearest() {
         distances.clear();
-        if (packageMode != PackageMode.RECMAPS
-                || (series != Series.K100 && series != Series.FSTOPO))
+        if (packageMode != PackageMode.RECMAPS || !locatedSeries())
             return 0;
-        final GeoPoint center = Distance.mapCenter();
+        final GeoPoint center = anchor();
         if (center == null)
             return 0;
         for (Depot.Package p : shownPackages) {
@@ -1748,9 +1795,11 @@ public class MapDepot implements IPlugin {
 
         if (hidden > 0)
             return String.format(Locale.US,
-                    "Nearest %d of %,d%s · move the map or search",
+                    "Nearest %d of %,d%s to %s · %s",
                     shownPackages.size(), shownPackages.size() + hidden,
-                    query.isEmpty() ? "" : " matching");
+                    query.isEmpty() ? "" : " matching",
+                    nearMe ? "you" : "the map center",
+                    nearMe ? "search for the rest" : "move the map or search");
 
         if (shownPackages.isEmpty()) {
             if (packageShown == Shown.INSTALLED)
