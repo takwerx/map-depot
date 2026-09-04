@@ -5,7 +5,7 @@
    plugin-name: "Map Depot",
    plugin-version: "1.6",
    platform: "ATAK",
-   platform-version: "5.8.0",
+   platform-version: "5.7.0",
 )
 
 #tak-slide[
