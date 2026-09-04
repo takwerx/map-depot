@@ -12,6 +12,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -122,6 +126,80 @@ public final class PackageInstaller {
             Log.i(TAG, "vector tile packages supported: " + ok);
         }
         return vtpkSupport;
+    }
+
+    /**
+     * Where a vector tile package goes when official ATAK 5.8 cannot be left
+     * with it: a sibling of {@code atak/imagery} that ATAK's scanner does not
+     * walk. The one recovery that worked on the phone that measured the crash.
+     */
+    public static final String PARKED_DIR_NAME = "imagery.off";
+
+    /**
+     * Every {@code .vtpk} directly under ATAK's imagery folder, whoever put it
+     * there. By extension, because that is how ATAK's scanner finds them.
+     */
+    public static List<File> vectorPackagesOnDevice() {
+        final List<File> out = new ArrayList<>();
+        final File[] files = FileSystemUtils.getItem("imagery").listFiles();
+        if (files == null)
+            return out;
+        for (File f : files) {
+            if (f.isFile() && f.getName().toLowerCase(Locale.US).endsWith(".vtpk"))
+                out.add(f);
+        }
+        Collections.sort(out);
+        return out;
+    }
+
+    /**
+     * Moves every vector tile package out of {@code atak/imagery} into
+     * {@link #PARKED_DIR_NAME} beside it, and returns how many moved. The only
+     * place this plugin moves a file it did not download: on official ATAK
+     * 5.8.0.4 a cataloged package means ATAK does not start, and the file is
+     * worth less than the app. Nothing is deleted, and a name already parked is
+     * kept by numbering the new one rather than replacing it.
+     *
+     * A rename, not a copy: same filesystem, so it is instant and a gigabyte is
+     * not written twice. ATAK is not told; the layer it holds stays until the
+     * restart this is protecting, and asking for a rescan would run exactly the
+     * code that crashes.
+     */
+    public static int parkVectorPackages() {
+        final File dir = FileSystemUtils.getItem("imagery");
+        final File parked = new File(dir.getParentFile(), PARKED_DIR_NAME);
+        if (!parked.isDirectory() && !parked.mkdirs()) {
+            Log.w(TAG, "could not create " + parked);
+            return 0;
+        }
+        int moved = 0;
+        for (File f : vectorPackagesOnDevice()) {
+            File to = new File(parked, f.getName());
+            for (int n = 2; to.exists() && n < 100; n++) {
+                final String name = f.getName();
+                final int dot = name.lastIndexOf('.');
+                to = new File(parked, name.substring(0, dot) + " (" + n + ")"
+                        + name.substring(dot));
+            }
+            try {
+                guardInside(dir, f);
+                guardInside(parked, to);
+            } catch (Exception escapes) {
+                Log.w(TAG, "not parking " + f.getName() + ": " + escapes);
+                continue;
+            }
+            if (to.exists()) {
+                Log.w(TAG, "not parking " + f.getName() + ": no free name");
+                continue;
+            }
+            if (f.renameTo(to)) {
+                moved++;
+                Log.i(TAG, "parked " + f.getName() + " as " + to);
+            } else {
+                Log.w(TAG, "could not move " + f + " to " + to);
+            }
+        }
+        return moved;
     }
 
     public static boolean isInstalled(Depot.Package pkg) {

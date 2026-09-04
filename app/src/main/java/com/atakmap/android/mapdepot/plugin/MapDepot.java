@@ -22,6 +22,7 @@ import android.widget.Toast;
 import com.atak.plugins.impl.PluginContextProvider;
 import com.atak.plugins.impl.PluginLayoutInflater;
 import com.atakmap.android.maps.MapView;
+import com.atakmap.android.mapdepot.AtakBuild;
 import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.Depot;
 import com.atakmap.android.mapdepot.DepotClient;
@@ -155,6 +156,13 @@ public class MapDepot implements IPlugin {
     private final List<Depot.RecMap> allRecMaps = new ArrayList<>();
     private final List<Depot.Package> shownPackages = new ArrayList<>();
     private final Set<String> installedPackages = new HashSet<>();
+
+    /**
+     * The offer to park vector tile packages is made once per plugin start.
+     * Refusing it is an answer; asking again every time the pane opens is not
+     * a reminder, it is nagging about something the operator already decided.
+     */
+    private boolean offeredToPark;
     private PackageAdapter packageAdapter;
     private TextView forestStatus;
     private EditText forestSearch;
@@ -271,6 +279,128 @@ public class MapDepot implements IPlugin {
         packages = new PackageInstaller();
         uiService.addToolbarItem(toolbarItem);
         registerPreferences();
+
+        // Left until ATAK has finished coming up: this runs while plugins are
+        // still loading, and a dialog thrown at a window that is not ready yet
+        // is lost, or worse. The check itself is cheap either way.
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        if (packages != null)
+                            offerToParkVectorPackages();
+                    }
+                }, PARK_OFFER_DELAY_MS);
+    }
+
+    private static final long PARK_OFFER_DELAY_MS = 5000L;
+
+    /**
+     * Why a vector tile package should not be downloaded onto this ATAK, in
+     * the form that fits where it is shown: the section's status line, or the
+     * tail of a row. Null when there is nothing in the way.
+     *
+     * Two different reasons, and they must not be confused: 5.6 cannot display
+     * one, which wastes the download; official 5.8.0.4 displays it and then
+     * never starts again, which loses the phone.
+     */
+    private String vectorPackageBlock(boolean brief) {
+        if (!PackageInstaller.supportsVectorPackages())
+            return brief ? pluginContext.getString(R.string.forests_need_57_brief)
+                    : pluginContext.getString(R.string.forests_need_57);
+        if (AtakBuild.blocksVectorPackages(hostContext())) {
+            final String v = AtakBuild.versionNumber(hostContext());
+            return brief ? pluginContext.getString(R.string.forests_blocked_brief, v)
+                    : pluginContext.getString(R.string.forests_blocked, v);
+        }
+        return null;
+    }
+
+    /**
+     * A phone already carrying packages on official 5.8 is one restart from an
+     * ATAK that does not open, and nothing on the phone says so. This does,
+     * once, and offers the one recovery that is known to work: moving the
+     * files to a folder beside atak/imagery that ATAK does not scan. Moving
+     * someone's files is not something this plugin does anywhere else, and
+     * the dialog says why it is right here.
+     */
+    private void offerToParkVectorPackages() {
+        if (offeredToPark)
+            return;
+        offeredToPark = true;
+        final Context host = hostContext();
+        if (!AtakBuild.blocksVectorPackages(host))
+            return;
+        final List<File> found = PackageInstaller.vectorPackagesOnDevice();
+        Log.i(TAG, "vector tile packages on an ATAK that will not start with"
+                + " them: " + found.size());
+        if (found.isEmpty())
+            return;
+
+        final int n = found.size();
+        final String version = AtakBuild.versionNumber(host);
+        final String message = n + " vector tile package" + (n == 1 ? " is" : "s are")
+                + " in atak/imagery (Offline Public Lands maps). ATAK " + version
+                + " will not start with " + (n == 1 ? "it" : "them")
+                + " there after the next restart.\n\nMove "
+                + (n == 1 ? "it" : "them") + " to atak/" + PackageInstaller.PARKED_DIR_NAME
+                + " now? ATAK does not look in that folder. Map Depot moves no other"
+                + " files, ever; this is the one case where the alternative is an"
+                + " ATAK that does not open. Move " + (n == 1 ? "it" : "them")
+                + " back by hand when tak.gov ships a fixed ATAK.";
+        try {
+            new AlertDialog.Builder(host)
+                    .setTitle("ATAK will not start next time")
+                    .setMessage(message)
+                    .setPositiveButton("Move", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            parkVectorPackages(n);
+                        }
+                    })
+                    .setNegativeButton("Not now", null)
+                    .show();
+        } catch (RuntimeException noWindow) {
+            // Nothing to draw on -- ATAK is not up the way the delay assumed.
+            // The section itself still says what is wrong; the offer comes
+            // back at the next plugin start.
+            Log.w(TAG, "could not offer to park vector tile packages: " + noWindow);
+            offeredToPark = false;
+        }
+    }
+
+    private void parkVectorPackages(final int expected) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final int moved = PackageInstaller.parkVectorPackages();
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(
+                        new Runnable() {
+                            @Override
+                            public void run() {
+                                reportParked(moved, expected);
+                            }
+                        });
+            }
+        }, "mapdepot-park").start();
+    }
+
+    private void reportParked(int moved, int expected) {
+        final String where = "atak/" + PackageInstaller.PARKED_DIR_NAME;
+        if (moved >= expected) {
+            toast("Moved " + moved + " to " + where + ". ATAK will start.");
+            return;
+        }
+        // Say it in a dialog, not a toast: this phone is still going to fail
+        // and three seconds on screen is not enough to learn that.
+        new AlertDialog.Builder(hostContext())
+                .setTitle("Not all moved")
+                .setMessage("Moved " + moved + " of " + expected + " to " + where
+                        + ". The rest are still in atak/imagery, and ATAK will not"
+                        + " start with them after the next restart. Move them out"
+                        + " with a file manager, or delete them.")
+                .setPositiveButton(R.string.ok, null)
+                .show();
     }
 
     /**
@@ -484,13 +614,28 @@ public class MapDepot implements IPlugin {
                     }
                 });
 
-        root.findViewById(R.id.btn_forests).setOnClickListener(
+        final View forestsButton = root.findViewById(R.id.btn_forests);
+        forestsButton.setOnClickListener(
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
                         showPackages(PackageMode.FORESTS);
                     }
                 });
+
+        // A section that vanishes reads as a bug. On an ATAK that must not be
+        // given these maps the button stays, dimmed, and the line under the
+        // buttons says why; it still opens, because a package already on the
+        // phone can still be removed from inside.
+        final TextView homeNote = root.findViewById(R.id.home_note);
+        if (AtakBuild.blocksVectorPackages(hostContext())) {
+            forestsButton.setAlpha(0.5f);
+            homeNote.setText(pluginContext.getString(R.string.home_forests_blocked,
+                    AtakBuild.versionNumber(hostContext())));
+            homeNote.setVisibility(View.VISIBLE);
+        } else {
+            homeNote.setVisibility(View.GONE);
+        }
 
         root.findViewById(R.id.btn_recmaps).setOnClickListener(
                 new View.OnClickListener() {
@@ -653,10 +798,13 @@ public class MapDepot implements IPlugin {
 
         // Say it up front rather than after a gigabyte has been downloaded.
         // ATAK 5.6 has no vector tile package support, so a forest basemap
-        // installs and then exists nowhere ATAK can see it.
-        if (mode == PackageMode.FORESTS
-                && !PackageInstaller.supportsVectorPackages())
-            forestStatus.setText(pluginContext.getString(R.string.forests_need_57));
+        // installs and then exists nowhere ATAK can see it; official 5.8.0.4
+        // displays it and then does not start again.
+        if (mode == PackageMode.FORESTS) {
+            final String block = vectorPackageBlock(false);
+            if (block != null)
+                forestStatus.setText(block);
+        }
 
         if (!catalogLoaded)
             loadCatalog();
@@ -2593,8 +2741,9 @@ public class MapDepot implements IPlugin {
             // these run to a gigabyte and two at once on a hotspot serves nobody.
             // A forest basemap this ATAK cannot display is not worth a
             // gigabyte. Removing one already downloaded stays available.
-            final boolean unusable = packageMode == PackageMode.FORESTS
-                    && !done && !PackageInstaller.supportsVectorPackages();
+            final String block = packageMode == PackageMode.FORESTS && !done
+                    ? vectorPackageBlock(true) : null;
+            final boolean unusable = block != null;
 
             action.setEnabled(!active && activeForestId == null && !unusable);
             if (active) {
@@ -2605,7 +2754,7 @@ public class MapDepot implements IPlugin {
                 action.setText(done ? R.string.remove : R.string.download);
             }
             if (unusable)
-                detail.setText(pkg.describe() + " · needs ATAK 5.7 or newer");
+                detail.setText(pkg.describe() + " · " + block);
             action.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {

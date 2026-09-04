@@ -170,7 +170,7 @@
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:minLines="2"
-                android:maxLines="2"
+                android:maxLines="3"
                 android:ellipsize="end"
                 android:paddingBottom="4dp"
                 android:paddingTop="4dp"

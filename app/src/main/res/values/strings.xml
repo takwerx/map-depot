@@ -35,6 +35,10 @@
     <string name="manual_title">Plugin Documentation</string>
     <string name="manual_summary">Open the Map Depot user guide: what each section downloads, how to find what you already have, and where files land</string>
     <string name="forests_need_57">These need ATAK 5.7 or newer. This version cannot display them.</string>
+    <string name="forests_need_57_brief">needs ATAK 5.7 or newer</string>
+    <string name="forests_blocked">Not available on ATAK %1$s: ATAK does not start with these maps installed. Waiting on a fix from tak.gov.</string>
+    <string name="forests_blocked_brief">not available on ATAK %1$s</string>
+    <string name="home_forests_blocked">Offline Public Lands is not available on ATAK %1$s: ATAK does not start with these maps installed. Waiting on a fix from tak.gov.</string>
     <string name="nifc_heading">Incident Maps (NIFC)</string>
     <string name="uaswfc_heading">Drone IR Maps (UASWFC)</string>
     <string name="download">Download</string>

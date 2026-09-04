@@ -1,12 +1,12 @@
 # Map Depot for ATAK — User Guide
 
-**Version 1.4 · takwerx**
+**Version 1.5 · takwerx**
 
-**Download Map Depot 1.4** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
+**Download Map Depot 1.5** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
 
-- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.6.0-civ-release.apk
-- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.7.0-civ-release.apk
-- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.8.0-civ-release.apk
+- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.5/ATAK-Plugin-MapDepot-1.5--5.6.0-civ-release.apk
+- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.5/ATAK-Plugin-MapDepot-1.5--5.7.0-civ-release.apk
+- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.5/ATAK-Plugin-MapDepot-1.5--5.8.0-civ-release.apk
 
 All releases: https://github.com/takwerx/map-depot/releases
 
@@ -33,6 +33,17 @@ arrived in ATAK 5.7, so on 5.6 a forest basemap would download and then be
 invisible to ATAK. Map Depot marks those maps as needing 5.7 or newer rather
 than letting you spend a gigabyte on one. Elevation, streaming base maps and
 ranger district maps all work normally on 5.6.
+
+**On official ATAK 5.8.0.4, Offline Public Lands is not available either.** ATAK
+5.8.0.4 does not start with a vector tile package on the phone once it has
+cataloged it — it dies before any plugin loads, with no message. Map Depot dims
+the section and says so, and does not offer the downloads. If you already have
+packages, Map Depot asks once, shortly after ATAK starts, whether to move them to
+`atak/imagery.off`, where ATAK does not look. Take it: otherwise ATAK will not
+open after its next restart, and the recovery is to move the files out with a
+file manager. Move them back by hand when tak.gov ships a fixed ATAK. Elevation,
+streaming base maps, ranger district maps and the incident maps all work
+normally on 5.8.
 
 ---
 
@@ -141,7 +152,9 @@ trails, boundaries, contours and labels — held on the device and drawn with no
 network at all. These are large: tens of megabytes for a grassland, over a
 gigabyte for the biggest forests.
 
-**Needs ATAK 5.7 or newer.** On 5.6 these rows are disabled and say so.
+**Needs ATAK 5.7 or newer, and not official 5.8.0.4.** On 5.6 these rows are
+disabled and say so. On official 5.8.0.4 they are disabled too, because ATAK
+does not start with one of these installed; see "Before you start".
 
 Type part of a forest's name to narrow the list.
 

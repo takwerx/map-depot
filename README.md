@@ -1,10 +1,10 @@
 ATAK Plugin — Map Depot
 
-**Download Map Depot 1.4** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
+**Download Map Depot 1.5** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
 
-- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.6.0-civ-release.apk
-- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.7.0-civ-release.apk
-- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.4/ATAK-Plugin-MapDepot-1.4--5.8.0-civ-release.apk
+- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.5/ATAK-Plugin-MapDepot-1.5--5.6.0-civ-release.apk
+- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.5/ATAK-Plugin-MapDepot-1.5--5.7.0-civ-release.apk
+- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.5/ATAK-Plugin-MapDepot-1.5--5.8.0-civ-release.apk
 
 All releases: https://github.com/takwerx/map-depot/releases
 
@@ -58,7 +58,25 @@ archives are read live, since what they hold changes through the day.
 _________________________________________________________________
 STATUS
 
-Version 1.4. Verified on ATAK-CIV 5.8.0.3.
+Version 1.5. Verified on ATAK-CIV 5.8.0.3 (SDK build).
+
+1.5 responds to a fault in ATAK, not in the plugin: official ATAK-CIV 5.8.0.4
+does not start once a vector tile package -- an Offline Public Lands map -- is
+in its layer catalog. The first import survives; every start after it dies in
+ATAK's own imagery scan, before any plugin loads, with an AbstractMethodError on
+TileMatrix.getName(). Measured 2026-09-03 on a Galaxy S22 Ultra, Android 14,
+with a 20 MB and a 242 MB package; the SDK's own 5.8.0.3 build starts fine with
+fifteen of them, so this is the official build's obfuscation. Reported to TAK
+Product Center support with the stack and the reproduction.
+
+So on an official 5.8 build, Map Depot no longer offers those downloads: the
+section stays, dimmed, and says why. A phone that already has packages is one
+restart from an ATAK that does not open, and on start Map Depot offers once to
+move them to atak/imagery.off, which ATAK does not scan; the dialog says that it
+is the only place this plugin moves a file. The gate is by release, not build
+number, and lifts when tak.gov ships a fixed ATAK. Everything else -- elevation,
+streaming base maps, ranger district maps, incident and drone IR maps -- is
+unchanged, on every ATAK version.
 
 _________________________________________________________________
 POINT OF CONTACTS
