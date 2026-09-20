@@ -1,6 +1,6 @@
 # Map Depot for ATAK — User Guide
 
-**Version 1.6 · takwerx**
+**Version 1.7 · takwerx**
 
 **Download Map Depot 1.7** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
 
