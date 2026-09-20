@@ -1,10 +1,10 @@
 ATAK Plugin — Map Depot
 
-**Download Map Depot 1.8** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
+**Download Map Depot 1.9** (pick the one matching your ATAK-CIV version, sideload, then load it in ATAK's Plugins manager):
 
-- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.8/ATAK-Plugin-MapDepot-1.8--5.6.0-civ-release.apk
-- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.8/ATAK-Plugin-MapDepot-1.8--5.7.0-civ-release.apk
-- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.8/ATAK-Plugin-MapDepot-1.8--5.8.0-civ-release.apk
+- **ATAK-CIV 5.6:** https://github.com/takwerx/map-depot/releases/download/v1.9/ATAK-Plugin-MapDepot-1.9--5.6.0-civ-release.apk
+- **ATAK-CIV 5.7:** https://github.com/takwerx/map-depot/releases/download/v1.9/ATAK-Plugin-MapDepot-1.9--5.7.0-civ-release.apk
+- **ATAK-CIV 5.8:** https://github.com/takwerx/map-depot/releases/download/v1.9/ATAK-Plugin-MapDepot-1.9--5.8.0-civ-release.apk
 
 All releases: https://github.com/takwerx/map-depot/releases
 
@@ -68,11 +68,12 @@ archives are read live, since what they hold changes through the day.
 _________________________________________________________________
 STATUS
 
-Version 1.8: a downloaded region that inflates to nothing is refused instead
-of hashed (tak.gov's Fortify scan of 1.7 flagged the digest). 1.8 also carries
-the change 1.7 was built for: each ATAK target's APK has its own versionCode,
-so an MDM can hold all three builds and push each one as an update. 1.7 went
-to tak.gov once and was superseded on the scan finding before publication.
+Version 1.9: a downloaded region that inflates to nothing is refused instead
+of hashed, and the hash is finalized with data in hand (tak.gov's Fortify
+scan flagged the digest on 1.7 and 1.8). 1.9 also carries the change 1.7 was
+built for: each ATAK target's APK has its own versionCode, so an MDM can hold
+all three builds and push each one as an update. 1.7 and 1.8 each went to
+tak.gov once and were superseded on the scan finding before publication.
 
 Version 1.6. Verified on ATAK-CIV 5.8.0.3 (SDK build) and, as the tak.gov-signed
 builds, on official ATAK-CIV 5.6.0.18 and 5.8.0.4 -- on the latter the gate,
