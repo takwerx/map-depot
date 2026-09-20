@@ -489,7 +489,13 @@ public final class RegionInstaller {
         }
     }
 
-    /** Inflates to {@code out} and returns the SHA-256 of what came out. */
+    /**
+     * Inflates to {@code out} and returns the SHA-256 of what came out. A
+     * region that inflates to nothing is refused rather than hashed: there is
+     * no map in it to verify. The first read happens before the loop so the
+     * digest is never finalized without having been fed; tak.gov's Fortify
+     * scan flags a digest whose only updates sit inside a loop.
+     */
     private static String inflate(File gz, File out) throws Exception {
         final MessageDigest md = MessageDigest.getInstance("SHA-256");
         final byte[] buf = new byte[BUFFER];
@@ -497,11 +503,13 @@ public final class RegionInstaller {
         try (InputStream in = new GZIPInputStream(
                 new java.io.FileInputStream(gz), BUFFER);
                 OutputStream os = new FileOutputStream(out)) {
-            int n;
-            while ((n = in.read(buf)) > 0) {
+            int n = in.read(buf);
+            if (n <= 0)
+                throw new IllegalStateException("empty region: " + gz);
+            do {
                 os.write(buf, 0, n);
                 md.update(buf, 0, n);
-            }
+            } while ((n = in.read(buf)) > 0);
         }
 
         final StringBuilder hex = new StringBuilder();
