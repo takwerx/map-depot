@@ -21,10 +21,14 @@ import java.util.concurrent.Executors;
 /**
  * Reads the catalog and region manifests from the depot.
  *
- * The catalog is cached to disk the moment it parses, and the cache is served
+ * The catalog is saved to disk the moment it parses, and the saved copy is served
  * whenever the network is not there. An operator opening this plugin on a hilltop
  * with no signal should still see what they already downloaded, and what a region
  * would cost if they had signal, rather than an error where the list should be.
+ *
+ * The saved copies live under {@code atak/tools/mapdepot}, not in Android's app
+ * cache dir: the system empties that under storage pressure, and a phone cleared
+ * while offline then showed nothing installed and offered no Remove.
  */
 public final class DepotClient {
 
@@ -67,15 +71,62 @@ public final class DepotClient {
         worker.shutdownNow();
     }
 
+    /**
+     * Brings the saved catalog, FSTopo list and region manifests across from
+     * where builds up to 1.9 kept them, ATAK's app cache dir. Queued on the
+     * worker, so it finishes before the first fetch reads anything. A file
+     * already in the new place is kept, and each old one is deleted once it
+     * is across, so the second start finds nothing to copy.
+     */
+    public void adopt(final File oldDir) {
+        worker.execute(new Runnable() {
+            @Override
+            public void run() {
+                final File[] files = oldDir == null ? null : oldDir.listFiles();
+                if (files == null)
+                    return;
+                int moved = 0;
+                for (final File f : files) {
+                    if (!f.isFile() || !isSavedName(f.getName()))
+                        continue;
+                    final File dest = new File(cacheDir, f.getName());
+                    try {
+                        if (!dest.isFile() && !write(dest, read(f)))
+                            continue;
+                        if (f.delete())
+                            moved++;
+                    } catch (Exception e) {
+                        Log.w(TAG, "could not bring " + f.getName()
+                                + " across: " + describe(e));
+                    }
+                }
+                if (oldDir.delete() || moved > 0)
+                    Log.i(TAG, "brought " + moved + " saved files across to "
+                            + cacheDir);
+            }
+        });
+    }
+
+    /** The files this client saves, and nothing else that may sit beside them. */
+    private static boolean isSavedName(String name) {
+        return CATALOG.equals(name) || FSTOPO_FILE.equals(name)
+                || (name.startsWith("manifest-") && name.endsWith(".json"));
+    }
+
+    /*
+     * In the three catalog callbacks, {@code savedAt} is 0 when the list came
+     * from the depot just now, and otherwise when the copy on this phone that
+     * it came from was saved -- so the pane can say how old it is.
+     */
+
     public interface CatalogCallback {
-        /** {@code cached} is true when the network failed and disk was used. */
-        void onCatalog(List<Depot.Region> regions, boolean cached);
+        void onCatalog(List<Depot.Region> regions, long savedAt);
 
         void onError(String message);
     }
 
     public interface BaseMapCallback {
-        void onBaseMaps(List<Depot.BaseMap> maps);
+        void onBaseMaps(List<Depot.BaseMap> maps, long savedAt);
 
         void onError(String message);
     }
@@ -83,7 +134,7 @@ public final class DepotClient {
     public interface ForestCallback {
         /** Every package kind comes from the one catalog document, so they arrive together. */
         void onForests(List<Depot.Forest> forests, List<Depot.RecMap> recMaps,
-                Depot.Sheets sheets);
+                Depot.Sheets sheets, long savedAt);
 
         void onError(String message);
     }
@@ -126,19 +177,15 @@ public final class DepotClient {
             public void run() {
                 final File cache = new File(cacheDir, CATALOG);
                 try {
-                    final String body = get(baseUrl() + "/" + CATALOG);
+                    final String body = getCatalog();
                     final List<Depot.Region> regions = Depot.parseCatalog(body);
-
-                    // Only cache what parsed. Caching the raw response would let a
-                    // truncated or error body poison every later offline open.
                     write(cache, body);
-
-                    post(cb, regions, false);
+                    post(cb, regions, 0L);
                 } catch (final Exception e) {
                     Log.w(TAG, "catalog fetch failed: " + describe(e));
                     try {
                         final String body = read(cache);
-                        post(cb, Depot.parseCatalog(body), true);
+                        post(cb, Depot.parseCatalog(body), savedAt(cache));
                     } catch (Exception noCache) {
                         postError(cb, describe(e));
                     }
@@ -159,14 +206,15 @@ public final class DepotClient {
             public void run() {
                 final File cache = new File(cacheDir, CATALOG);
                 try {
-                    final String body = get(baseUrl() + "/" + CATALOG);
+                    final String body = getCatalog();
                     final List<Depot.BaseMap> maps = Depot.parseBaseMaps(body);
                     write(cache, body);
-                    postMaps(cb, maps);
+                    postMaps(cb, maps, 0L);
                 } catch (final Exception e) {
                     Log.w(TAG, "base map fetch failed: " + describe(e));
                     try {
-                        postMaps(cb, Depot.parseBaseMaps(read(cache)));
+                        postMaps(cb, Depot.parseBaseMaps(read(cache)),
+                                savedAt(cache));
                     } catch (Exception noCache) {
                         final String msg = describe(e);
                         main.post(new Runnable() {
@@ -182,11 +230,11 @@ public final class DepotClient {
     }
 
     private void postMaps(final BaseMapCallback cb,
-            final List<Depot.BaseMap> maps) {
+            final List<Depot.BaseMap> maps, final long savedAt) {
         main.post(new Runnable() {
             @Override
             public void run() {
-                cb.onBaseMaps(maps);
+                cb.onBaseMaps(maps, savedAt);
             }
         });
     }
@@ -202,16 +250,19 @@ public final class DepotClient {
             public void run() {
                 final File cache = new File(cacheDir, CATALOG);
                 try {
-                    final String body = get(baseUrl() + "/" + CATALOG);
+                    final String body = getCatalog();
+                    final List<Depot.Forest> forests = Depot.parseForests(body);
+                    final List<Depot.RecMap> recMaps = Depot.parseRecMaps(body);
+                    final Depot.Sheets sheets = Depot.parseSheets(body);
                     write(cache, body);
-                    postForests(cb, Depot.parseForests(body),
-                            Depot.parseRecMaps(body), Depot.parseSheets(body));
+                    postForests(cb, forests, recMaps, sheets, 0L);
                 } catch (final Exception e) {
                     Log.w(TAG, "package fetch failed: " + describe(e));
                     try {
                         final String cached = read(cache);
                         postForests(cb, Depot.parseForests(cached),
-                                Depot.parseRecMaps(cached), Depot.parseSheets(cached));
+                                Depot.parseRecMaps(cached), Depot.parseSheets(cached),
+                                savedAt(cache));
                     } catch (Exception noCache) {
                         final String msg = describe(e);
                         main.post(new Runnable() {
@@ -228,11 +279,11 @@ public final class DepotClient {
 
     private void postForests(final ForestCallback cb,
             final List<Depot.Forest> forests, final List<Depot.RecMap> recMaps,
-            final Depot.Sheets sheets) {
+            final Depot.Sheets sheets, final long savedAt) {
         main.post(new Runnable() {
             @Override
             public void run() {
-                cb.onForests(forests, recMaps, sheets);
+                cb.onForests(forests, recMaps, sheets, savedAt);
             }
         });
     }
@@ -327,13 +378,32 @@ public final class DepotClient {
     // ------------------------------------------------------------------ plumbing
 
     private void post(final CatalogCallback cb, final List<Depot.Region> regions,
-            final boolean cached) {
+            final long savedAt) {
         main.post(new Runnable() {
             @Override
             public void run() {
-                cb.onCatalog(regions, cached);
+                cb.onCatalog(regions, savedAt);
             }
         });
+    }
+
+    /**
+     * The catalog from the depot, refused unless it reads as one. The three
+     * sections share one saved file, so a reply that is JSON but not the
+     * catalog -- an error page, a captive portal, a cut-off read -- would
+     * otherwise replace the good copy for all of them, and the phone would
+     * find out the next time it had no signal. Each caller parses its own
+     * sections as well, and saves only once everything it reads has parsed.
+     */
+    private static String getCatalog() throws Exception {
+        final String body = get(baseUrl() + "/" + CATALOG);
+        Depot.parseCatalog(body);
+        return body;
+    }
+
+    /** When a saved copy was written; never 0, which means "just fetched". */
+    private static long savedAt(File f) {
+        return Math.max(1L, f.lastModified());
     }
 
     private void postError(final CatalogCallback cb, final String msg) {
@@ -391,17 +461,34 @@ public final class DepotClient {
             throw new IllegalStateException("path escapes " + base + ": " + f);
     }
 
-    private static void write(File f, String body) {
+    /**
+     * Writes the document beside the saved copy and renames it into place, so
+     * a write cut short -- ATAK killed, the card full -- leaves the last good
+     * copy rather than half of a new one.
+     */
+    private static boolean write(File f, String body) {
+        final File parent = f.getParentFile();
+        final File tmp = new File(parent, f.getName() + ".tmp");
         try {
-            final File parent = f.getParentFile();
-            if (parent != null && !parent.exists() && !parent.mkdirs())
-                return;
-            try (OutputStream out = new FileOutputStream(f)) {
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs())
+                throw new IllegalStateException("cannot create " + parent);
+            try (OutputStream out = new FileOutputStream(tmp)) {
                 out.write(body.getBytes("UTF-8"));
             }
+            if (!tmp.renameTo(f)) {
+                // Some storage will not rename over a file that exists.
+                if (f.exists() && !f.delete())
+                    throw new IllegalStateException("cannot replace " + f.getName());
+                if (!tmp.renameTo(f))
+                    throw new IllegalStateException("cannot rename " + tmp.getName());
+            }
+            return true;
         } catch (Exception e) {
-            // A cache that cannot be written is a smaller problem than a crash.
-            Log.w(TAG, "could not cache " + f.getName() + ": " + describe(e));
+            // A copy that cannot be saved is a smaller problem than a crash.
+            Log.w(TAG, "could not save " + f.getName() + ": " + describe(e));
+            if (tmp.exists() && !tmp.delete())
+                Log.w(TAG, "could not delete " + tmp.getName());
+            return false;
         }
     }
 

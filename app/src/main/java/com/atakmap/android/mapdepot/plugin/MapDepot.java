@@ -3,6 +3,8 @@ package com.atakmap.android.mapdepot.plugin;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -35,6 +37,7 @@ import com.atakmap.android.mapdepot.UaswfcClient;
 import com.atakmap.android.mapdepot.PackageInstaller;
 import com.atakmap.android.mapdepot.Pinned;
 import com.atakmap.android.mapdepot.RegionInstaller;
+import com.atakmap.coremap.filesystem.FileSystemUtils;
 import com.atakmap.coremap.log.Log;
 import com.atakmap.coremap.maps.coords.GeoPoint;
 
@@ -108,6 +111,11 @@ public class MapDepot implements IPlugin {
 
     /** Display names, parallel to {@link #countryCodes}. */
     private final List<String> countryLabels = new ArrayList<>();
+
+    /**
+     * The catalog came from the depot. Not set by the saved copy, so the next
+     * section opened asks again and the "No network" line goes once it is back.
+     */
     private boolean catalogLoaded;
 
     /** id of the region currently downloading, or null. One at a time on purpose. */
@@ -265,6 +273,15 @@ public class MapDepot implements IPlugin {
 
     /** How many entries the source withheld, kept for the status line. */
     private int nifcHidden;
+
+    /** The list is the maps on this phone, because the archive did not answer. */
+    private boolean nifcOffline;
+
+    /**
+     * When the saved copy each catalog section is showing was saved, or 0 when
+     * it came from the depot just now. Kept for the status lines.
+     */
+    private long mapsSavedAt, forestsSavedAt;
     private final Deque<String[]> nifcStack = new ArrayDeque<>();
     private final List<String> gaccPaths = new ArrayList<>();
     private final List<String> gaccLabels = new ArrayList<>();
@@ -319,7 +336,8 @@ public class MapDepot implements IPlugin {
     public void onStart() {
         if (uiService == null)
             return;
-        client = new DepotClient(cacheDir());
+        client = new DepotClient(savedDir());
+        client.adopt(oldCacheDir());
         installer = new RegionInstaller();
         baseMaps = new BaseMapInstaller();
         packages = new PackageInstaller();
@@ -1306,9 +1324,9 @@ public class MapDepot implements IPlugin {
         status.setText(pluginContext.getString(R.string.loading_catalog));
         client.fetchCatalog(new DepotClient.CatalogCallback() {
             @Override
-            public void onCatalog(List<Depot.Region> fetched, boolean cached) {
-                Log.i(TAG, "onCatalog regions=" + fetched.size() + " cached=" + cached);
-                catalogLoaded = true;
+            public void onCatalog(List<Depot.Region> fetched, long savedAt) {
+                Log.i(TAG, "onCatalog regions=" + fetched.size() + " savedAt=" + savedAt);
+                catalogLoaded = savedAt == 0;
                 allRegions.clear();
                 allRegions.addAll(fetched);
                 measureRegions();
@@ -1317,17 +1335,13 @@ public class MapDepot implements IPlugin {
                 loadBaseMaps();
                 loadForests();
 
-                if (cached) {
-                    status.setText(pluginContext.getString(R.string.catalog_offline));
-                } else {
-                    status.setText("");
-                }
+                status.setText(savedAt > 0 ? savedLine(savedAt) : "");
             }
 
             @Override
             public void onError(String message) {
                 Log.w(TAG, "catalog error: " + message);
-                status.setText("Depot unreachable: " + message);
+                status.setText(nothingSavedLine());
             }
         });
     }
@@ -1492,15 +1506,72 @@ public class MapDepot implements IPlugin {
      * BadTokenException on the main thread and takes ATAK down with it.
      */
     /**
-     * A cache directory ATAK's own process can actually write. The plugin
-     * context's getCacheDir() points inside the plugin package's data dir, which
-     * ATAK runs under a different uid and cannot create -- it fails with ENOENT,
-     * so every document written there vanished and Base Maps came up empty.
+     * Where the catalog, the FSTopo list and the region manifests are saved:
+     * atak/tools, beside every other plugin's data, which nothing clears behind
+     * the operator's back. Not anywhere under the plugin context either: its
+     * dirs belong to the plugin package's uid, which ATAK's process cannot
+     * write -- every document written there vanished and Base Maps came up
+     * empty.
      */
-    private File cacheDir() {
-        final MapView mv = MapView.getMapView();
-        final Context host = mv != null ? mv.getContext() : pluginContext;
-        return new File(host.getCacheDir(), "mapdepot");
+    private static File savedDir() {
+        return FileSystemUtils.getItem("tools/mapdepot");
+    }
+
+    /**
+     * Where builds up to 1.9 saved them: ATAK's app cache dir, which Android
+     * empties under storage pressure. Read once at start to bring them across.
+     */
+    private File oldCacheDir() {
+        return new File(hostContext().getCacheDir(), "mapdepot");
+    }
+
+    /**
+     * True when the phone has no network at all, as against a server that did
+     * not answer. Decides which of the two the status line says.
+     */
+    @SuppressWarnings("deprecation")
+    private boolean noNetwork() {
+        try {
+            final ConnectivityManager cm = (ConnectivityManager) hostContext()
+                    .getSystemService(Context.CONNECTIVITY_SERVICE);
+            final NetworkInfo ni = cm == null ? null : cm.getActiveNetworkInfo();
+            return ni == null || !ni.isConnected();
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * The line a catalog section shows when it is working from the copy on
+     * this phone: why, and how old that copy is. Never the host error --
+     * "Unable to resolve host" tells a crew on a ridge nothing.
+     */
+    private String savedLine(long savedAt) {
+        return (noNetwork() ? "No network." : "Depot unreachable.")
+                + " Showing what this phone saved " + ago(savedAt) + ".";
+    }
+
+    /** The same, for a section with nothing saved to fall back on. */
+    private String nothingSavedLine() {
+        return (noNetwork() ? "No network" : "Depot unreachable")
+                + ", and nothing saved on this phone yet.";
+    }
+
+    /** A status line, with the saved-copy line under it when that is what shows. */
+    private String withSaved(String line, long savedAt) {
+        return savedAt > 0 ? line + "\n" + savedLine(savedAt) : line;
+    }
+
+    private static String ago(long when) {
+        final long min = Math.max(0L, System.currentTimeMillis() - when) / 60000L;
+        if (min < 1)
+            return "just now";
+        if (min < 60)
+            return min + " min ago";
+        final long hours = min / 60;
+        if (hours < 48)
+            return hours + " h ago";
+        return (hours / 24) + " days ago";
     }
 
     private Context hostContext() {
@@ -1517,8 +1588,9 @@ public class MapDepot implements IPlugin {
             return;
         client.fetchBaseMaps(new DepotClient.BaseMapCallback() {
             @Override
-            public void onBaseMaps(List<Depot.BaseMap> maps) {
-                Log.i(TAG, "onBaseMaps count=" + maps.size());
+            public void onBaseMaps(List<Depot.BaseMap> maps, long savedAt) {
+                Log.i(TAG, "onBaseMaps count=" + maps.size() + " savedAt=" + savedAt);
+                mapsSavedAt = savedAt;
                 allMaps.clear();
                 allMaps.addAll(maps);
 
@@ -1535,7 +1607,7 @@ public class MapDepot implements IPlugin {
             @Override
             public void onError(String message) {
                 Log.w(TAG, "base map error: " + message);
-                mapStatus.setText("Could not read base maps: " + message);
+                mapStatus.setText(nothingSavedLine());
             }
         });
     }
@@ -1591,14 +1663,14 @@ public class MapDepot implements IPlugin {
         mapAdapter.notifyDataSetChanged();
 
         if (shownMaps.isEmpty())
-            mapStatus.setText(mapShown == Shown.INSTALLED
+            mapStatus.setText(withSaved(mapShown == Shown.INSTALLED
                     ? "None installed here yet."
                     : mapShown == Shown.AVAILABLE
                             ? "All of these are installed."
-                            : "Nothing in this category.");
+                            : "Nothing in this category.", mapsSavedAt));
         else
-            mapStatus.setText(String.format("%d of %d installed",
-                    installedMaps.size(), allMaps.size()));
+            mapStatus.setText(withSaved(String.format("%d of %d installed",
+                    installedMaps.size(), allMaps.size()), mapsSavedAt));
     }
 
     private void install(final Depot.BaseMap map) {
@@ -1652,7 +1724,9 @@ public class MapDepot implements IPlugin {
         client.fetchForests(new DepotClient.ForestCallback() {
             @Override
             public void onForests(List<Depot.Forest> fetched,
-                    List<Depot.RecMap> recMaps, Depot.Sheets sheets) {
+                    List<Depot.RecMap> recMaps, Depot.Sheets sheets,
+                    long savedAt) {
+                forestsSavedAt = savedAt;
                 Log.i(TAG, "onForests forests=" + fetched.size()
                         + " recmaps=" + recMaps.size()
                         + " regional=" + sheets.regional.size()
@@ -1674,7 +1748,7 @@ public class MapDepot implements IPlugin {
             @Override
             public void onError(String message) {
                 Log.w(TAG, "package catalog: " + message);
-                forestStatus.setText("Could not read packages: " + message);
+                forestStatus.setText(nothingSavedLine());
             }
         });
     }
@@ -1711,7 +1785,7 @@ public class MapDepot implements IPlugin {
         packageAdapter.notifyDataSetChanged();
 
         if (activeForestId == null)
-            forestStatus.setText(statusLine(q, hidden));
+            forestStatus.setText(withSaved(statusLine(q, hidden), forestsSavedAt));
     }
 
     /**
@@ -1941,6 +2015,7 @@ public class MapDepot implements IPlugin {
             nifcStack.clear();
             gaccPaths.clear();
             gaccLabels.clear();
+            nifcOffline = false;
             nifcRows.clear();
             nifcAdapter.notifyDataSetChanged();
         }
@@ -1988,7 +2063,12 @@ public class MapDepot implements IPlugin {
 
             @Override
             public void onError(String message) {
-                nifcStatus.setText("Could not reach NIFC: " + message);
+                Log.w(TAG, "area list: " + message);
+                // Opened with an area already chosen, the folder listing beside
+                // this one says what is wrong, and this must not talk over it.
+                // Asked for to choose one, this is the only answer coming.
+                if (thenPrompt)
+                    showNifcOffline();
             }
         });
     }
@@ -2067,6 +2147,7 @@ public class MapDepot implements IPlugin {
                 if (!path.equals(nifcPath))
                     return;
 
+                nifcOffline = false;
                 nifcAllRows.clear();
 
                 // Pinned fires ride at the top of the first screen only. Deeper
@@ -2127,9 +2208,80 @@ public class MapDepot implements IPlugin {
             public void onError(String message) {
                 if (!encodedPath.equals(nifcPath))
                     return;
-                nifcStatus.setText("Could not read that folder: " + message);
+                Log.w(TAG, "listing " + decodedPath + ": " + message);
+                showNifcOffline();
             }
         });
+    }
+
+    /**
+     * The incident list when the archive does not answer: the maps on this
+     * phone and the pinned fires, rebuilt from what InstalledIndex and Pinned
+     * saved, whichever filter is set. Without it the list came up empty and the
+     * pins were gone, with every map still on the phone under a filter nobody
+     * would think to try.
+     *
+     * At the top of the archive it is every map from it, because there is no
+     * walking down to them without a network; inside a pinned fire it is that
+     * fire's.
+     */
+    private void showNifcOffline() {
+        nifcOffline = true;
+        nifcAllRows.clear();
+        if (nifcStack.isEmpty()) {
+            for (final Pinned.Entry pin : Pinned.all(source.id())) {
+                if (!pin.path.equals(nifcPath))
+                    nifcAllRows.add(pin);
+            }
+        }
+        for (final InstalledIndex.Record r : offlineRecords()) {
+            final MapSource.Posting row = InstalledIndex.toPosting(r);
+            nifcInstalled.add(row.id());
+            nifcAllRows.add(row);
+        }
+        nifcHidden = 0;
+        applyNifcFilter();
+    }
+
+    private List<InstalledIndex.Record> offlineRecords() {
+        return InstalledIndex.under(source == null ? null : source.id(),
+                nifcStack.isEmpty() ? "" : nifcDecodedPath);
+    }
+
+    /** Says the list is what is on the phone, and why, in words. */
+    private void describeOffline() {
+        int maps = 0, pins = 0;
+        for (final Object o : nifcRows) {
+            if (o instanceof Pinned.Entry)
+                pins++;
+            else if (o instanceof MapSource.Posting)
+                maps++;
+        }
+        final StringBuilder sb = new StringBuilder();
+        if (!nifcStack.isEmpty()) {
+            final String where = breadcrumb(nifcDecodedPath);
+            if (!where.isEmpty())
+                sb.append(where).append('\n');
+        }
+        sb.append(noNetwork() ? "No network. "
+                : "Could not reach " + source.label() + ". ");
+        if (maps == 0 && pins == 0) {
+            sb.append(nifcStack.isEmpty()
+                    ? "No maps from " + source.label() + " on this phone."
+                    : "No maps from this folder on this phone.");
+        } else {
+            sb.append("Showing ");
+            if (maps > 0)
+                sb.append(maps).append(maps == 1 ? " map" : " maps")
+                        .append(" on this phone");
+            if (maps > 0 && pins > 0)
+                sb.append(" and ");
+            if (pins > 0)
+                sb.append(pins).append(pins == 1 ? " pinned fire"
+                        : " pinned fires");
+            sb.append('.');
+        }
+        nifcStatus.setText(sb.toString());
     }
 
     /** One layer, so one toggle, wherever it is pressed from. */
@@ -2181,8 +2333,9 @@ public class MapDepot implements IPlugin {
         // the top of an archive shows the lot and it narrows as they walk down.
         // A fire's folder is mostly subfolders, so without this "Installed" had
         // nothing to count and showed an empty list beside a full device.
-        final List<InstalledIndex.Record> below = InstalledIndex.under(
-                source == null ? null : source.id(), nifcDecodedPath);
+        final List<InstalledIndex.Record> below = nifcOffline ? offlineRecords()
+                : InstalledIndex.under(source == null ? null : source.id(),
+                        nifcDecodedPath);
 
         final java.util.Set<String> indexed = new HashSet<>();
         for (final InstalledIndex.Record r : below)
@@ -2200,6 +2353,10 @@ public class MapDepot implements IPlugin {
             }
             final MapSource.Posting posting = (MapSource.Posting) o;
             final boolean have = nifcInstalled.contains(posting.id());
+            // Offline every row is a map on the phone; one removed since
+            // goes, rather than turning into a Download that cannot work.
+            if (nifcOffline && !have)
+                continue;
             if (have) {
                 listedHere.add(InstalledIndex.lower(posting.name()));
                 // Downloaded before the index existed, so it is on the device
@@ -2209,7 +2366,7 @@ public class MapDepot implements IPlugin {
             } else {
                 available++;
             }
-            if (nifcShown == Shown.ALL
+            if (nifcOffline || nifcShown == Shown.ALL
                     || (nifcShown == Shown.INSTALLED && have)
                     || (nifcShown == Shown.AVAILABLE && !have))
                 nifcRows.add(posting);
@@ -2230,13 +2387,19 @@ public class MapDepot implements IPlugin {
 
         refreshOutlinesButton();
 
-        final int count = nifcShown == Shown.INSTALLED ? installed
-                : nifcShown == Shown.AVAILABLE ? available
+        // Offline the list is the installed maps whatever the filter says, and
+        // the button says so rather than "Available" over a list of installed.
+        final Shown counted = nifcOffline ? Shown.INSTALLED : nifcShown;
+        final int count = counted == Shown.INSTALLED ? installed
+                : counted == Shown.AVAILABLE ? available
                         : installed + available;
-        nifcFilter.setText(pluginContext.getString(labelFor(nifcShown))
+        nifcFilter.setText(pluginContext.getString(labelFor(counted))
                 + " (" + count + ")");
         nifcAdapter.notifyDataSetChanged();
-        describeListing(nifcHidden);
+        if (nifcOffline)
+            describeOffline();
+        else
+            describeListing(nifcHidden);
     }
 
     /**
