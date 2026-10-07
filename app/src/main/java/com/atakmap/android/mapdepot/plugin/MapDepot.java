@@ -347,8 +347,8 @@ public class MapDepot implements IPlugin {
      * tail of a row. Null when there is nothing in the way.
      *
      * Two different reasons, and they must not be confused: 5.6 cannot display
-     * one, which wastes the download; official 5.8.0.4 displays it and then
-     * never starts again, which loses the phone.
+     * one, which wastes the download; official 5.8.0.4 and earlier display it
+     * and then never start again, which loses the phone.
      */
     private String vectorPackageBlock(boolean brief) {
         if (!PackageInstaller.supportsVectorPackages())
@@ -357,13 +357,14 @@ public class MapDepot implements IPlugin {
         if (AtakBuild.blocksVectorPackages(hostContext())) {
             final String v = AtakBuild.versionNumber(hostContext());
             return brief ? pluginContext.getString(R.string.forests_blocked_brief, v)
-                    : pluginContext.getString(R.string.forests_blocked, v);
+                    : pluginContext.getString(R.string.forests_blocked, v,
+                            AtakBuild.fixedVersion());
         }
         return null;
     }
 
     /**
-     * A phone already carrying packages on official 5.8 is one restart from an
+     * A phone already carrying packages on official 5.8.0.4 is one restart from an
      * ATAK that does not open, and nothing on the phone says so. This does,
      * once, and offers the one recovery that is known to work: moving the
      * files to a folder beside atak/imagery that ATAK does not scan. Moving
@@ -393,7 +394,8 @@ public class MapDepot implements IPlugin {
                 + " now? ATAK does not look in that folder. Map Depot moves no other"
                 + " files, ever; this is the one case where the alternative is an"
                 + " ATAK that does not open. Move " + (n == 1 ? "it" : "them")
-                + " back by hand when tak.gov ships a fixed ATAK.";
+                + " back by hand after updating ATAK to " + AtakBuild.fixedVersion()
+                + " or newer.";
         try {
             new AlertDialog.Builder(host)
                     .setTitle("ATAK will not start next time")
@@ -702,7 +704,7 @@ public class MapDepot implements IPlugin {
         if (AtakBuild.blocksVectorPackages(hostContext())) {
             forestsButton.setAlpha(0.5f);
             homeNote.setText(pluginContext.getString(R.string.home_forests_blocked,
-                    AtakBuild.versionNumber(hostContext())));
+                    AtakBuild.versionNumber(hostContext()), AtakBuild.fixedVersion()));
             homeNote.setVisibility(View.VISIBLE);
         } else {
             homeNote.setVisibility(View.GONE);

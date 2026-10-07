@@ -34,16 +34,18 @@ invisible to ATAK. Map Depot marks those maps as needing 5.7 or newer rather
 than letting you spend a gigabyte on one. Elevation, streaming base maps and
 Forest Service map sheets all work normally on 5.6.
 
-**On official ATAK 5.8.0.4, Offline Public Land Vector Tiles is not available either.** ATAK
-5.8.0.4 does not start with a vector tile package on the phone once it has
-cataloged it — it dies before any plugin loads, with no message. Map Depot dims
-the section and says so, and does not offer the downloads. If you already have
-packages, Map Depot asks once, shortly after ATAK starts, whether to move them to
-`atak/imagery.off`, where ATAK does not look. Take it: otherwise ATAK will not
-open after its next restart, and the recovery is to move the files out with a
-file manager. Move them back by hand when tak.gov ships a fixed ATAK. Elevation,
-streaming base maps, Forest Service map sheets and the incident maps all work
-normally on 5.8.
+**On official ATAK 5.8.0.4, Offline Public Land Vector Tiles is not available either:
+update ATAK to 5.8.0.5.** ATAK 5.8.0.4 does not start with a vector tile package
+on the phone once it has cataloged it — it dies before any plugin loads, with no
+message. TAK Product Center fixed this in 5.8.0.5, and there Map Depot offers
+these maps as on 5.7. On 5.8.0.4 Map Depot dims the section and says so, and
+does not offer the downloads. If you already have packages, Map Depot asks once,
+shortly after ATAK starts, whether to move them to `atak/imagery.off`, where
+ATAK does not look. Take it: otherwise ATAK will not open after its next
+restart, and the recovery is to move the files out with a file manager. Once
+ATAK is on 5.8.0.5 or newer, move them back to `atak/imagery` by hand.
+Elevation, streaming base maps, Forest Service map sheets and the incident maps
+all work normally on every 5.8.
 
 ---
 
@@ -157,7 +159,8 @@ gigabyte for the biggest forests.
 
 **Needs ATAK 5.7 or newer, and not official 5.8.0.4.** On 5.6 these rows are
 disabled and say so. On official 5.8.0.4 they are disabled too, because ATAK
-does not start with one of these installed; see "Before you start".
+does not start with one of these installed; 5.8.0.5 fixed that. See "Before
+you start".
 
 Type part of a forest's name to narrow the list.
 

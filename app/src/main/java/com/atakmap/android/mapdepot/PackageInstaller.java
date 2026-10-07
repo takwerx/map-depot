@@ -129,7 +129,7 @@ public final class PackageInstaller {
     }
 
     /**
-     * Where a vector tile package goes when official ATAK 5.8 cannot be left
+     * Where a vector tile package goes when official ATAK 5.8.0.4 cannot be left
      * with it: a sibling of {@code atak/imagery} that ATAK's scanner does not
      * walk. The one recovery that worked on the phone that measured the crash.
      */

@@ -28,11 +28,14 @@ import java.util.Set;
  * build's obfuscation and not 5.8 as such.
  *
  * So the gate has two conditions, both about ATAK's own package: tak.gov signed
- * it, and its version is in {@link #VTPK_BLOCKED_RELEASE}. The signature is what
- * keeps the SDK's dev build -- signed with the shared developer keystore -- out
- * of the gate, because that build is where plugins are tested. Version is by
- * release rather than build number until a fixed 5.8 is confirmed; lifting the
- * gate is clearing that one constant.
+ * it, and its version is a build of {@link #VTPK_BLOCKED_RELEASE} below
+ * {@link #VTPK_FIXED_BUILD}. The signature is what keeps the SDK's dev build --
+ * signed with the shared developer keystore -- out of the gate, because that
+ * build is where plugins are tested.
+ *
+ * TAK Product Center fixed it in 5.8.0.5 (ATAK-21131, "fix obfuscation issue for
+ * VTPK and TPKX tile containers"). Confirmed 2026-10-06 on the same S22 Ultra,
+ * official 5.8.0.5: a cataloged 18 MB package, two restarts, no crash.
  */
 public final class AtakBuild {
 
@@ -47,11 +50,14 @@ public final class AtakBuild {
             "94cf4bac08acfd8a90ddfce88f5772215ae0639833d5dd8bfe3fd6819c8961da";
 
     /**
-     * The release whose official builds will not start with a cataloged vector
-     * tile package. Matched as a prefix of ATAK's version number. Empty means
-     * no release is blocked.
+     * The release whose early official builds will not start with a cataloged
+     * vector tile package. Matched as a prefix of ATAK's version number. Empty
+     * means no release is blocked.
      */
-    public static final String VTPK_BLOCKED_RELEASE = "5.8.";
+    public static final String VTPK_BLOCKED_RELEASE = "5.8.0.";
+
+    /** The first build of {@link #VTPK_BLOCKED_RELEASE} that starts with them. */
+    public static final int VTPK_FIXED_BUILD = 5;
 
     private static String cachedVersion;
     private static Boolean cachedBlocked;
@@ -77,15 +83,35 @@ public final class AtakBuild {
     public static synchronized boolean blocksVectorPackages(Context host) {
         if (cachedBlocked == null) {
             final String version = versionNumber(host);
-            final boolean release = version != null
-                    && VTPK_BLOCKED_RELEASE.length() > 0
-                    && version.startsWith(VTPK_BLOCKED_RELEASE);
+            final boolean release = isBlockedBuild(version);
             final boolean official = release && isTakSigned(host);
             cachedBlocked = release && official;
             Log.i(TAG, "ATAK " + version + " official=" + official
                     + " blocks vector tile packages=" + cachedBlocked);
         }
         return cachedBlocked;
+    }
+
+    /** The ATAK version that fixed it, {@code 5.8.0.5}, for the words on screen. */
+    public static String fixedVersion() {
+        return VTPK_BLOCKED_RELEASE + VTPK_FIXED_BUILD;
+    }
+
+    /**
+     * True for a build of {@link #VTPK_BLOCKED_RELEASE} below
+     * {@link #VTPK_FIXED_BUILD}. Fails open like the rest: a build number that
+     * does not read as one number is not blocked.
+     */
+    static boolean isBlockedBuild(String version) {
+        if (version == null || VTPK_BLOCKED_RELEASE.length() == 0
+                || !version.startsWith(VTPK_BLOCKED_RELEASE))
+            return false;
+        try {
+            return Integer.parseInt(version.substring(VTPK_BLOCKED_RELEASE.length()))
+                    < VTPK_FIXED_BUILD;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     /** True when the ATAK this runs inside was itself signed by tak.gov. */
