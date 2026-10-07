@@ -469,18 +469,22 @@ public final class DepotClient {
     private static boolean write(File f, String body) {
         final File parent = f.getParentFile();
         final File tmp = new File(parent, f.getName() + ".tmp");
+        // The exceptions say what failed and never name a path: tak.gov's
+        // Fortify scan reads a path in an exception message as a System
+        // Information Leak (1.10, all three builds). The log line below says
+        // which file it was.
         try {
             if (parent != null && !parent.isDirectory() && !parent.mkdirs())
-                throw new IllegalStateException("cannot create " + parent);
+                throw new IllegalStateException("cannot create the folder");
             try (OutputStream out = new FileOutputStream(tmp)) {
                 out.write(body.getBytes("UTF-8"));
             }
             if (!tmp.renameTo(f)) {
                 // Some storage will not rename over a file that exists.
                 if (f.exists() && !f.delete())
-                    throw new IllegalStateException("cannot replace " + f.getName());
+                    throw new IllegalStateException("cannot replace the saved copy");
                 if (!tmp.renameTo(f))
-                    throw new IllegalStateException("cannot rename " + tmp.getName());
+                    throw new IllegalStateException("cannot rename the new copy");
             }
             return true;
         } catch (Exception e) {
