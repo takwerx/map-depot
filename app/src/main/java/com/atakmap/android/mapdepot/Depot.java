@@ -217,6 +217,15 @@ public final class Depot {
         public final String file;
         public final long bytes;
         public final String sha256;
+        /**
+         * Set when the tile server wants the operator's own API key (CARTO
+         * since 2025). The depot's XML carries a {@code {$key}} slot and the
+         * installer fills it from the key stored under this provider id, so
+         * the catalog never holds anyone's key.
+         */
+        public final String keyProvider;
+        /** Where to get a key, or empty. Only https survives parsing. */
+        public final String keyUrl;
 
         BaseMap(JSONObject o) {
             id = o.optString("id");
@@ -239,6 +248,16 @@ public final class Depot {
             if (file.isEmpty() || sha256.length() != 64)
                 throw new IllegalArgumentException(
                         "base map " + id + " has no file or digest");
+
+            final String kp = o.optString("keyProvider", "");
+            // Becomes a preference name, so it is held to the same closed
+            // pattern as an id rather than trusted.
+            if (!kp.isEmpty() && !SOURCE_ID.matcher(kp).matches())
+                throw new IllegalArgumentException(
+                        "base map " + id + " has an invalid key provider");
+            keyProvider = kp;
+            final String ku = o.optString("keyUrl", "");
+            keyUrl = ku.startsWith("https://") ? ku : "";
         }
 
         private BaseMap(String heading) {
@@ -255,6 +274,13 @@ public final class Depot {
             file = "";
             bytes = 0L;
             sha256 = "";
+            keyProvider = "";
+            keyUrl = "";
+        }
+
+        /** Whether installing needs an API key from the operator. */
+        public boolean needsKey() {
+            return !keyProvider.isEmpty();
         }
 
         /** A heading row for the sectioned overlay list. */

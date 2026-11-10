@@ -6,10 +6,13 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.os.Bundle;
+import android.preference.EditTextPreference;
 import android.preference.Preference;
 import android.preference.PreferenceManager;
+import android.widget.Toast;
 
 import com.atakmap.android.maps.MapView;
+import com.atakmap.android.mapdepot.BaseMapInstaller;
 import com.atakmap.android.mapdepot.plugin.R;
 import com.atakmap.android.preference.PluginPreferenceFragment;
 import com.atakmap.android.util.PdfHelper;
@@ -27,13 +30,17 @@ import java.io.File;
  * surfaces a plugin's documentation through this screen, so without it the PDF
  * shipped inside the APK and no operator could open it.
  *
- * There is nothing else on this screen on purpose. Map Depot has no settings --
- * the depot address is fixed, and every other choice is made on the page it
- * belongs to.
+ * There is almost nothing else on this screen on purpose. Map Depot has no
+ * settings -- the depot address is fixed, and every other choice is made on
+ * the page it belongs to. The one exception is an API key for a tile server
+ * that wants the operator's own, which belongs nowhere else.
  */
 public class MapDepotPreferenceFragment extends PluginPreferenceFragment {
 
     public static final String TAG = "MapDepotPrefs";
+
+    /** The catalog's {@code keyProvider} for CARTO's basemaps. */
+    private static final String CARTO = "carto";
 
     private static final String USER_GUIDE = "usermanual.pdf";
 
@@ -75,6 +82,8 @@ public class MapDepotPreferenceFragment extends PluginPreferenceFragment {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        bindKey(CARTO, "key_carto");
+
         final Preference manual = findPreference("manual");
         if (manual == null)
             return;
@@ -86,6 +95,44 @@ public class MapDepotPreferenceFragment extends PluginPreferenceFragment {
                         return true;
                     }
                 });
+    }
+
+    /**
+     * Ties a non-persistent EditTextPreference to the key store in
+     * {@link BaseMapInstaller}, which keeps keys on the MapView context so
+     * they survive a plugin reload. The summary says whether one is set and
+     * never shows the key itself.
+     */
+    private void bindKey(final String provider, String prefName) {
+        final Preference p = findPreference(prefName);
+        if (!(p instanceof EditTextPreference))
+            return;
+        final EditTextPreference pref = (EditTextPreference) p;
+        pref.setText(BaseMapInstaller.keyFor(provider));
+        summarizeKey(pref, provider);
+        pref.setOnPreferenceChangeListener(
+                new Preference.OnPreferenceChangeListener() {
+                    @Override
+                    public boolean onPreferenceChange(Preference preference,
+                            Object value) {
+                        final String k = value == null ? "" : value.toString();
+                        if (!BaseMapInstaller.setKey(provider, k)) {
+                            Toast.makeText(getActivity(),
+                                    pluginContext.getString(R.string.key_bad_shape),
+                                    Toast.LENGTH_SHORT).show();
+                            return false;
+                        }
+                        pref.setText(k.trim());
+                        summarizeKey(pref, provider);
+                        return false;
+                    }
+                });
+    }
+
+    private void summarizeKey(Preference pref, String provider) {
+        pref.setSummary(pluginContext.getString(
+                BaseMapInstaller.keyFor(provider).isEmpty()
+                        ? R.string.key_not_set : R.string.key_set));
     }
 
     /**

@@ -1,8 +1,11 @@
 package com.atakmap.android.mapdepot;
 
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.preference.PreferenceManager;
 
+import com.atakmap.android.maps.MapView;
 import com.atakmap.coremap.filesystem.FileSystemUtils;
 import com.atakmap.coremap.log.Log;
 
@@ -12,9 +15,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Pattern;
 
 /**
  * Downloads a base map's source XML and puts it where ATAK reads map sources.
@@ -41,6 +46,59 @@ public final class BaseMapInstaller {
 
     /** A map source XML far larger than this is not a map source XML. */
     private static final int MAX_BYTES = 512 * 1024;
+
+    /**
+     * The slot in a keyed source's XML that the operator's key goes into.
+     * Spelled like MOBAC's own {@code {$x}} tokens so the file reads as one
+     * of them, though ATAK never sees it: the digest is checked on the
+     * template and the slot is filled before anything is written.
+     */
+    public static final String KEY_SLOT = "{$key}";
+
+    /** Raised when a keyed source is installed with no key on the device. */
+    public static final String NO_KEY = "no API key";
+
+    /**
+     * What a key may look like. The key is pasted into a URL inside an XML
+     * file, so anything outside the URL-unreserved set is refused rather
+     * than escaped -- no provider issues keys that need it.
+     */
+    private static final Pattern KEY_SHAPE =
+            Pattern.compile("[A-Za-z0-9._~-]{8,256}");
+
+    private static final String PREF_KEY_PREFIX = "mapdepot.key.";
+
+    /** The operator's key for a provider, or empty. Never logged. */
+    public static String keyFor(String provider) {
+        final SharedPreferences p = prefs();
+        if (p == null || provider == null || provider.isEmpty())
+            return "";
+        final String k = p.getString(PREF_KEY_PREFIX + provider, "");
+        return k == null ? "" : k.trim();
+    }
+
+    /** Stores a key, or forgets it when empty. False when it is not a key. */
+    public static boolean setKey(String provider, String key) {
+        final SharedPreferences p = prefs();
+        if (p == null)
+            return false;
+        final String k = key == null ? "" : key.trim();
+        if (k.isEmpty()) {
+            p.edit().remove(PREF_KEY_PREFIX + provider).apply();
+            return true;
+        }
+        if (!KEY_SHAPE.matcher(k).matches())
+            return false;
+        p.edit().putString(PREF_KEY_PREFIX + provider, k).apply();
+        return true;
+    }
+
+    /** On the MapView context, so the key outlives a plugin reload. */
+    private static SharedPreferences prefs() {
+        final MapView mv = MapView.getMapView();
+        return mv == null ? null
+                : PreferenceManager.getDefaultSharedPreferences(mv.getContext());
+    }
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -130,13 +188,38 @@ public final class BaseMapInstaller {
         }
     }
 
-    /** Whether this source is already on the device at the right size. */
+    /**
+     * Whether this source is already on the device at the right size.
+     *
+     * A keyed source is sized after substitution, so it is checked for the
+     * key instead: a file written with a key the operator has since replaced
+     * reads as not installed, and Add rewrites it with the current one.
+     */
     public static boolean isInstalled(Depot.BaseMap map) {
         final File f = new File(dirFor(map), map.fileName());
-        return f.isFile() && f.length() == map.bytes;
+        if (!f.isFile())
+            return false;
+        if (!map.needsKey())
+            return f.length() == map.bytes;
+        final String key = keyFor(map.keyProvider);
+        if (key.isEmpty() || f.length() > MAX_BYTES)
+            return false;
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            final byte[] b = new byte[(int) f.length()];
+            int off = 0, n;
+            while (off < b.length && (n = in.read(b, off, b.length - off)) > 0)
+                off += n;
+            return new String(b, 0, off, StandardCharsets.UTF_8).contains(key);
+        } catch (Exception unreadable) {
+            return false;
+        }
     }
 
     public void install(final Depot.BaseMap map, final Callback cb) {
+        if (map.needsKey() && keyFor(map.keyProvider).isEmpty()) {
+            cb.onError(map, NO_KEY);
+            return;
+        }
         worker.execute(new Runnable() {
             @Override
             public void run() {
@@ -242,12 +325,14 @@ public final class BaseMapInstaller {
             // the depot, not that anything is wrong with the file.
             throw new IllegalStateException(STALE_CATALOG);
 
+        final byte[] written = map.needsKey() ? withKey(map, body) : body;
+
         // Write beside the destination and rename, so a source is never half
         // written where ATAK might scan it.
         final File tmp = new File(dir, map.fileName() + ".part");
         guardInside(dir, tmp);
         try (OutputStream out = new FileOutputStream(tmp)) {
-            out.write(body);
+            out.write(written);
         }
 
         final File dest = new File(dir, map.fileName());
@@ -267,6 +352,21 @@ public final class BaseMapInstaller {
         }
         Log.d(TAG, "installed " + dest + " (" + dest.length() + " bytes)");
         return dest;
+    }
+
+    /**
+     * The verified template with the operator's key in its slot. A keyed
+     * entry whose XML has no slot would install a URL ATAK sends with a
+     * literal "{$key}" and draw watermarks, so that is refused here.
+     */
+    private static byte[] withKey(Depot.BaseMap map, byte[] template) {
+        final String key = keyFor(map.keyProvider);
+        if (key.isEmpty())
+            throw new IllegalStateException(NO_KEY);
+        final String xml = new String(template, StandardCharsets.UTF_8);
+        if (!xml.contains(KEY_SLOT))
+            throw new IllegalStateException("source has no key slot");
+        return xml.replace(KEY_SLOT, key).getBytes(StandardCharsets.UTF_8);
     }
 
     /**

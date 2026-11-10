@@ -143,6 +143,18 @@ close enough to see parking spaces; **zoom 10** is regional only.
 
 ![Base map rows](screenshots/10_base_map_rows.png)
 
+### Maps that need your own key
+
+A few servers only serve clean tiles to requests that carry an API key of
+your own; CARTO's **Voyager**, **Positron** and **Dark Matter** are the ones
+in the list. Their rows say *needs your API key*. Tap **Add** and the plugin
+asks for the key, with a **Get a key** button that opens the provider's page
+(CARTO's is free for ordinary use). The key is kept on the device and written
+into the map source file ATAK reads; the row then says *key set*. To change or
+clear it later, go to **Settings › Tool Preferences › Map Depot**. After a
+change, the affected rows go back to **Add** so you can re-add them with the
+new key.
+
 ### Overlays
 
 Some sources are *overlays* rather than base maps: roads, labels, contour lines,
