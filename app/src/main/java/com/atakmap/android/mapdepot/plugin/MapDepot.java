@@ -1442,8 +1442,12 @@ public class MapDepot implements IPlugin {
         baseMapView.setVisibility(View.VISIBLE);
         if (!catalogFresh())
             loadCatalog();
-        else
+        else {
+            // A key changed in Tool Preferences flips which keyed rows count
+            // as installed, so the check is redone on every visit.
+            refreshInstalledMaps();
             applyCategoryFilter();
+        }
     }
 
     /** The catalog is only fetched once the operator asks for elevation. */
@@ -2124,8 +2128,66 @@ public class MapDepot implements IPlugin {
     }
 
     private void install(final Depot.BaseMap map) {
+        if (map.needsKey() && BaseMapInstaller.keyFor(map.keyProvider).isEmpty()) {
+            askForKey(map);
+            return;
+        }
         mapStatus.setText("Getting " + map.name + "…");
         baseMaps.install(map, mapCallback());
+    }
+
+    /**
+     * Takes the operator's API key on the spot rather than sending them to
+     * Tool Preferences: the row they tapped is the one that needs it, and the
+     * install goes ahead as soon as a key is saved. The same key is editable
+     * later from the settings screen.
+     */
+    private void askForKey(final Depot.BaseMap map) {
+        final String who = map.provider.isEmpty() ? map.keyProvider : map.provider;
+        final EditText box = new EditText(hostContext());
+        box.setSingleLine(true);
+        box.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        final AlertDialog.Builder b = new AlertDialog.Builder(hostContext())
+                .setTitle(pluginContext.getString(R.string.key_needed_title, who))
+                .setMessage(pluginContext.getString(R.string.key_needed_message, who))
+                .setView(box)
+                .setPositiveButton(pluginContext.getString(R.string.add),
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int w) {
+                                final String k = box.getText().toString().trim();
+                                if (k.isEmpty()
+                                        || !BaseMapInstaller.setKey(map.keyProvider, k)) {
+                                    mapStatus.setText(pluginContext.getString(
+                                            R.string.key_bad_shape));
+                                    return;
+                                }
+                                install(map);
+                            }
+                        })
+                .setNegativeButton(pluginContext.getString(R.string.cancel), null);
+        if (!map.keyUrl.isEmpty())
+            b.setNeutralButton(pluginContext.getString(R.string.get_key),
+                    new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            openUrl(map.keyUrl);
+                        }
+                    });
+        b.show();
+    }
+
+    /** Hands an https address to the device browser; a toast if there is none. */
+    private void openUrl(String url) {
+        try {
+            hostContext().startActivity(new android.content.Intent(
+                    android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (RuntimeException noBrowser) {
+            toast(url);
+        }
     }
 
     private void uninstall(final Depot.BaseMap map) {
@@ -2161,6 +2223,10 @@ public class MapDepot implements IPlugin {
                     mapStatus.setText("Depot has a newer " + m.name
                             + " — refreshing, then tap Get again.");
                     loadBaseMaps();
+                    return;
+                }
+                if (BaseMapInstaller.NO_KEY.equals(message)) {
+                    askForKey(m);
                     return;
                 }
                 mapStatus.setText(m.name + " failed: " + message);
@@ -4049,7 +4115,12 @@ public class MapDepot implements IPlugin {
             action.setVisibility(View.VISIBLE);
 
             name.setText(map.name);
-            detail.setText(map.describe());
+            String about = map.describe();
+            if (map.needsKey())
+                about += (about.isEmpty() ? "" : " · ") + pluginContext.getString(
+                        BaseMapInstaller.keyFor(map.keyProvider).isEmpty()
+                                ? R.string.key_row_missing : R.string.key_set);
+            detail.setText(about);
 
             // One button that flips rather than a swipe: a hidden gesture is a
             // poor fit for a list read with gloves on, and removing a map source

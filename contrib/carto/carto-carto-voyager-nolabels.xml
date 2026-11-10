@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<customMapSource>
+    <name>CARTO - Voyager (no labels)</name>
+    <minZoom>0</minZoom>
+    <maxZoom>20</maxZoom>
+    <tileType>png</tileType>
+    <tileUpdate>IfNoneMatch</tileUpdate>
+    <serverParts>a b c d</serverParts>
+    <url>https://{$serverpart}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{$z}/{$x}/{$y}.png?key={$key}</url>
+</customMapSource>
